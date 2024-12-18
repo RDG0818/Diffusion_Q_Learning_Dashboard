@@ -160,7 +160,8 @@ class Diffusion_QL(object):
             if self.dual_diffusion: # calculating the raw loss for the second actor and finding the minimum loss
                 bc_loss2_tensor = self.actor2.loss(action, state, ts)
                 min_loss = torch.mean(torch.minimum(bc_loss_tensor, bc_loss2_tensor))
-                bc_loss = torch.where(bc_loss_tensor < bc_loss2_tensor, bc_loss_tensor, torch.tensor(0)).mean()
+                bc_loss = torch.where(bc_loss_tensor < bc_loss2_tensor, bc_loss_tensor, bc_loss2_tensor).mean()
+                assert min_loss.shape == bc_loss.shape # TODO
                 bc_loss2 = torch.where( bc_loss2_tensor < bc_loss_tensor, bc_loss2_tensor, torch.tensor(0)).mean()
                 
             
@@ -177,9 +178,9 @@ class Diffusion_QL(object):
 
             self.actor_optimizer.zero_grad()
             actor_loss.backward()
-            if self.dual_diffusion:
-                self.actor2_optimizer.zero_grad() 
-                bc_loss2.backward()
+            # if self.dual_diffusion:
+            #     self.actor2_optimizer.zero_grad() 
+            #     bc_loss2.backward()
 
             if self.grad_norm > 0: 
                 actor_grad_norms = nn.utils.clip_grad_norm_(self.actor.parameters(), max_norm=self.grad_norm, norm_type=2)
