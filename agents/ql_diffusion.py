@@ -101,7 +101,8 @@ class Diffusion_QL(object):
 
         if lr_decay: # Added second actor to lr scheduler
             self.actor_lr_scheduler = CosineAnnealingLR(self.actor_optimizer, T_max=lr_maxt, eta_min=0.)
-            self.actor2_lr_scheduler = CosineAnnealingLR(self.actor2_optimizer, T_max=lr_maxt, eta_min=0.)
+            if self.dual_diffusion:
+                self.actor2_lr_scheduler = CosineAnnealingLR(self.actor2_optimizer, T_max=lr_maxt, eta_min=0.)
             self.critic_lr_scheduler = CosineAnnealingLR(self.critic_optimizer, T_max=lr_maxt, eta_min=0.)
 
         self.state_dim = state_dim
@@ -124,7 +125,7 @@ class Diffusion_QL(object):
         metric = {'bc_loss': [], 'bc_loss2': [], 'min_loss': [], 'ql_loss': [], 'actor_loss': [], 'critic_loss': []}
         for _ in range(iterations):
             # Sample replay buffer / batch
-            state, action, next_state, reward, not_done = replay_buffer.sample(batch_size)
+            state, action, next_state, reward, not_done, source = replay_buffer.sample(batch_size)
 
             """ Q Training """
             current_q1, current_q2 = self.critic(state, action)
@@ -153,13 +154,15 @@ class Diffusion_QL(object):
 
             """ Policy Training """
             ts = torch.randint(0, self.n_timesteps, (batch_size,), device=action.device).long() # creating timesteps for both actors
-            bc_loss = self.actor.loss(action, state, ts)
+            bc_loss_tensor = self.actor.loss(action, state, ts)
+            bc_loss = torch.mean(bc_loss_tensor)
 
             if self.dual_diffusion: # calculating the raw loss for the second actor and finding the minimum loss
-                bc_loss2 = self.actor2.loss(action, state, ts)
-                bc_loss = torch.where(bc_loss < bc_loss2, bc_loss, torch.tensor(0))
-                bc_loss2 = torch.where( bc_loss2 < bc_loss, bc_loss2, torch.tensor(0))
-                min_loss = torch.minimum(bc_loss, bc_loss2)
+                bc_loss2_tensor = self.actor2.loss(action, state, ts)
+                min_loss = torch.mean(torch.minimum(bc_loss_tensor, bc_loss2_tensor))
+                bc_loss = torch.where(bc_loss_tensor < bc_loss2_tensor, bc_loss_tensor, torch.tensor(0)).mean()
+                bc_loss2 = torch.where( bc_loss2_tensor < bc_loss_tensor, bc_loss2_tensor, torch.tensor(0)).mean()
+                
             
             new_action = self.actor(state)
 
@@ -173,14 +176,16 @@ class Diffusion_QL(object):
             actor_loss = bc_loss + self.eta * q_loss # I also tried using min_loss here but it didn't work
 
             self.actor_optimizer.zero_grad()
-            self.actor2_optimizer.zero_grad() 
             actor_loss.backward()
-            bc_loss2.backward()
+            if self.dual_diffusion:
+                self.actor2_optimizer.zero_grad() 
+                bc_loss2.backward()
 
             if self.grad_norm > 0: 
                 actor_grad_norms = nn.utils.clip_grad_norm_(self.actor.parameters(), max_norm=self.grad_norm, norm_type=2)
             self.actor_optimizer.step()
-            self.actor2_optimizer.step()
+            if self.dual_diffusion:
+                self.actor2_optimizer.step()
 
 
             """ Step Target network """
@@ -212,7 +217,8 @@ class Diffusion_QL(object):
 
         if self.lr_decay: 
             self.actor_lr_scheduler.step()
-            self.actor2_lr_scheduler.step()
+            if self.dual_diffusion:
+                self.actor2_lr_scheduler.step()
             self.critic_lr_scheduler.step()
 
         return metric

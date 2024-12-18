@@ -6,17 +6,17 @@ import math
 import torch
 import numpy as np
 
-#TODO: Change dual_diffusion flag to general mixed data flag
+#TODO: Change mixed_data flag to general mixed data flag
 class Data_Sampler(object):
-	def __init__(self, data, device, reward_tune='no', dual_diffusion=False):
+	def __init__(self, data, device, reward_tune='no', mixed_data=False):
 		
 		self.state = torch.from_numpy(data['observations']).float()
 		self.action = torch.from_numpy(data['actions']).float()
 		self.next_state = torch.from_numpy(data['next_observations']).float()
 		reward = torch.from_numpy(data['rewards']).view(-1, 1).float()
 		self.not_done = 1. - torch.from_numpy(data['terminals']).view(-1, 1).float()
-		self.dual_diffusion = dual_diffusion
-		if self.dual_diffusion:	
+		self.mixed_data = mixed_data
+		if self.mixed_data:	
 			self.sources = torch.from_numpy(data['sources'])
 
 		self.size = self.state.shape[0]
@@ -39,7 +39,7 @@ class Data_Sampler(object):
 
 	def sample(self, batch_size):
 		ind = torch.randint(0, self.size, size=(batch_size,))
-		if self.dual_diffusion:
+		if self.mixed_data:
 			return (
 				self.state[ind].to(self.device),
 				self.action[ind].to(self.device),

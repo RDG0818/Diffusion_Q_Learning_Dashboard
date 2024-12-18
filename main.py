@@ -2,9 +2,11 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import argparse
+import tabulate
 import gym
 import numpy as np
 import os
+import sklearn.metrics
 import torch
 import json
 import wandb
@@ -43,9 +45,9 @@ hyperparameters = {
 
 def train_agent(env, state_dim, action_dim, max_action, device, output_dir, args):
     # Load buffer
-    #dataset = mix_datasets('walker2d-medium-v2', 'walker2d-expert-v2')
-    dataset = d4rl.qlearning_dataset(env)
-    data_sampler = Data_Sampler(dataset, device, args.reward_tune)
+    dataset = mix_datasets('walker2d-medium-v2', 'walker2d-expert-v2')
+    #dataset = d4rl.qlearning_dataset(env)
+    data_sampler = Data_Sampler(dataset, device, args.reward_tune, True)
     utils.print_banner('Loaded buffer')
 
     if args.algo == 'ql':
@@ -126,7 +128,7 @@ def train_agent(env, state_dim, action_dim, max_action, device, output_dir, args
         wandb.log({'Average Episodic Reward': eval_res, 
                    'Average Episodic N-Reward': eval_norm_res})
         logger.dump_tabular()
-
+        
         # # Checking dual diffusions ability to differentiate sources 
         # estimated, ground_truth = agent.ground_truth_check(replay_buffer=data_sampler, batch_size=100)
         # estimated = estimated.cpu().numpy()
