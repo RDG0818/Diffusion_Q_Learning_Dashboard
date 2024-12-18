@@ -1,0 +1,16 @@
+{"time":"2024-12-17T15:26:59.299754855-06:00","level":"INFO","msg":"using version","core version":"0.19.1"}
+{"time":"2024-12-17T15:26:59.299773606-06:00","level":"INFO","msg":"created symlink","path":"/home/tori/Documents/research/Diffusion-Policies-for-Offline-RL/wandb/run-20241217_152659-mmk2h0eq/logs/debug-core.log"}
+{"time":"2024-12-17T15:26:59.403275883-06:00","level":"INFO","msg":"created new stream","id":"mmk2h0eq"}
+{"time":"2024-12-17T15:26:59.403300159-06:00","level":"INFO","msg":"stream: started","id":"mmk2h0eq"}
+{"time":"2024-12-17T15:26:59.403355346-06:00","level":"INFO","msg":"writer: Do: started","stream_id":"mmk2h0eq"}
+{"time":"2024-12-17T15:26:59.403436846-06:00","level":"INFO","msg":"sender: started","stream_id":"mmk2h0eq"}
+{"time":"2024-12-17T15:26:59.403470996-06:00","level":"INFO","msg":"handler: started","stream_id":"mmk2h0eq"}
+{"time":"2024-12-17T15:26:59.688732569-06:00","level":"INFO","msg":"Starting system monitor"}
+{"time":"2024-12-17T15:40:25.044074661-06:00","level":"INFO","msg":"stream: closing","id":"mmk2h0eq"}
+{"time":"2024-12-17T15:40:25.044096378-06:00","level":"INFO","msg":"Stopping system monitor"}
+{"time":"2024-12-17T15:40:25.044429994-06:00","level":"INFO","msg":"Stopped system monitor"}
+{"time":"2024-12-17T15:40:26.770134146-06:00","level":"INFO","msg":"fileTransfer: Close: file transfer manager closed"}
+{"time":"2024-12-17T15:40:28.259674116-06:00","level":"INFO","msg":"handler: closed","stream_id":"mmk2h0eq"}
+{"time":"2024-12-17T15:40:28.259695685-06:00","level":"INFO","msg":"writer: Close: closed","stream_id":"mmk2h0eq"}
+{"time":"2024-12-17T15:40:28.25972162-06:00","level":"INFO","msg":"sender: closed","stream_id":"mmk2h0eq"}
+{"time":"2024-12-17T15:40:28.259724759-06:00","level":"INFO","msg":"stream: closed","id":"mmk2h0eq"}

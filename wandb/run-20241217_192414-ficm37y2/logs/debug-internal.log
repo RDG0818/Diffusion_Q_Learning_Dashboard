@@ -1,0 +1,16 @@
+{"time":"2024-12-17T19:24:14.061938909-06:00","level":"INFO","msg":"using version","core version":"0.19.1"}
+{"time":"2024-12-17T19:24:14.061950096-06:00","level":"INFO","msg":"created symlink","path":"/home/tori/Documents/research/Diffusion-Policies-for-Offline-RL/wandb/run-20241217_192414-ficm37y2/logs/debug-core.log"}
+{"time":"2024-12-17T19:24:14.163670455-06:00","level":"INFO","msg":"created new stream","id":"ficm37y2"}
+{"time":"2024-12-17T19:24:14.163684738-06:00","level":"INFO","msg":"stream: started","id":"ficm37y2"}
+{"time":"2024-12-17T19:24:14.163753341-06:00","level":"INFO","msg":"handler: started","stream_id":"ficm37y2"}
+{"time":"2024-12-17T19:24:14.16376619-06:00","level":"INFO","msg":"writer: Do: started","stream_id":"ficm37y2"}
+{"time":"2024-12-17T19:24:14.163768015-06:00","level":"INFO","msg":"sender: started","stream_id":"ficm37y2"}
+{"time":"2024-12-17T19:24:14.396418439-06:00","level":"INFO","msg":"Starting system monitor"}
+{"time":"2024-12-17T19:24:21.807015922-06:00","level":"INFO","msg":"stream: closing","id":"ficm37y2"}
+{"time":"2024-12-17T19:24:21.807037968-06:00","level":"INFO","msg":"Stopping system monitor"}
+{"time":"2024-12-17T19:24:21.807484239-06:00","level":"INFO","msg":"Stopped system monitor"}
+{"time":"2024-12-17T19:24:22.20137998-06:00","level":"INFO","msg":"fileTransfer: Close: file transfer manager closed"}
+{"time":"2024-12-17T19:24:22.408684819-06:00","level":"INFO","msg":"handler: closed","stream_id":"ficm37y2"}
+{"time":"2024-12-17T19:24:22.408699403-06:00","level":"INFO","msg":"writer: Close: closed","stream_id":"ficm37y2"}
+{"time":"2024-12-17T19:24:22.408724605-06:00","level":"INFO","msg":"sender: closed","stream_id":"ficm37y2"}
+{"time":"2024-12-17T19:24:22.408727295-06:00","level":"INFO","msg":"stream: closed","id":"ficm37y2"}

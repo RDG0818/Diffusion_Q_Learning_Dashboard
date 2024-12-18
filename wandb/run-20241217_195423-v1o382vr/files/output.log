@@ -1,0 +1,87 @@
+------------------------------------------------------------
+Saving location: results/walker2d-medium-expert-v2|exp_1|diffusion-ql|T-5|lr_decay|ms-offline|k-1|0|dual_diffusion
+------------------------------------------------------------
+/home/tori/miniconda3/envs/DQL/lib/python3.9/site-packages/gym/spaces/box.py:84: UserWarning: [33mWARN: Box bound precision lowered by casting to float32[0m
+  logger.warn(f"Box bound precision lowered by casting to {self.dtype}")
+24-12-17.19:54|Variant:
+24-12-17.19:54|{
+  "exp": "exp_1",
+  "device": "cuda:0",
+  "env_name": "walker2d-medium-expert-v2",
+  "dir": "results",
+  "seed": 0,
+  "num_steps_per_epoch": 1000,
+  "batch_size": 256,
+  "lr_decay": true,
+  "early_stop": true,
+  "save_best_model": false,
+  "discount": 0.99,
+  "tau": 0.005,
+  "T": 5,
+  "beta_schedule": "vp",
+  "algo": "ql",
+  "ms": "offline",
+  "dual_diffusion": true,
+  "output_dir": "results",
+  "num_epochs": 100,
+  "eval_freq": 50,
+  "eval_episodes": 10,
+  "lr": 0.0003,
+  "eta": 1.0,
+  "max_q_backup": false,
+  "reward_tune": "no",
+  "gn": 5.0,
+  "top_k": 1,
+  "version": "Diffusion-Policies-RL",
+  "state_dim": 17,
+  "action_dim": 6,
+  "max_action": 1.0
+}
+------------------------------------------------------------
+Env: walker2d-medium-expert-v2, state_dim: 17, action_dim: 6, dual_diffusion: True
+------------------------------------------------------------
+load datafile: 100%|██████████████████████████████████████████████████████████████████| 9/9 [00:02<00:00,  3.53it/s]
+------------------------------------------------------------
+Loaded buffer
+------------------------------------------------------------
+******************************************************************************************
+Training Start
+******************************************************************************************
+******************************************************************************************
+Train step: 50000
+******************************************************************************************
+24-12-17.20:00|[walker2d-medium-expert-v2|exp_1|diffusion-ql|T-5|lr_decay|ms-offline|k-1|0|dual_diffusion] --------------  ----------
+24-12-17.20:00|[walker2d-medium-expert-v2|exp_1|diffusion-ql|T-5|lr_decay|ms-offline|k-1|0|dual_diffusion] Trained Epochs  50
+24-12-17.20:00|[walker2d-medium-expert-v2|exp_1|diffusion-ql|T-5|lr_decay|ms-offline|k-1|0|dual_diffusion] BC Loss          0.0485576
+24-12-17.20:00|[walker2d-medium-expert-v2|exp_1|diffusion-ql|T-5|lr_decay|ms-offline|k-1|0|dual_diffusion] QL Loss         -0.999969
+24-12-17.20:00|[walker2d-medium-expert-v2|exp_1|diffusion-ql|T-5|lr_decay|ms-offline|k-1|0|dual_diffusion] Actor Loss      -0.951418
+24-12-17.20:00|[walker2d-medium-expert-v2|exp_1|diffusion-ql|T-5|lr_decay|ms-offline|k-1|0|dual_diffusion] Critic Loss     22.4527
+24-12-17.20:00|[walker2d-medium-expert-v2|exp_1|diffusion-ql|T-5|lr_decay|ms-offline|k-1|0|dual_diffusion] --------------  ----------
+/home/tori/miniconda3/envs/DQL/lib/python3.9/site-packages/gym/spaces/box.py:84: UserWarning: [33mWARN: Box bound precision lowered by casting to float32[0m
+  logger.warn(f"Box bound precision lowered by casting to {self.dtype}")
+/home/tori/Documents/research/Diffusion-Policies-for-Offline-RL/agents/ql_diffusion.py:232: UserWarning: Implicit dimension choice for softmax has been deprecated. Change the call to include dim=X as an argument.
+  idx = torch.multinomial(F.softmax(q_value), 1)
+------------------------------------------------------------
+Evaluation over 10 episodes: 225.64 0.05
+------------------------------------------------------------
+24-12-17.20:01|[walker2d-medium-expert-v2|exp_1|diffusion-ql|T-5|lr_decay|ms-offline|k-1|0|dual_diffusion] -------------------------  -----------
+24-12-17.20:01|[walker2d-medium-expert-v2|exp_1|diffusion-ql|T-5|lr_decay|ms-offline|k-1|0|dual_diffusion] Average Episodic Reward    225.637
+24-12-17.20:01|[walker2d-medium-expert-v2|exp_1|diffusion-ql|T-5|lr_decay|ms-offline|k-1|0|dual_diffusion] Average Episodic N-Reward    0.0487963
+24-12-17.20:01|[walker2d-medium-expert-v2|exp_1|diffusion-ql|T-5|lr_decay|ms-offline|k-1|0|dual_diffusion] -------------------------  -----------
+******************************************************************************************
+Train step: 100000
+******************************************************************************************
+24-12-17.20:07|[walker2d-medium-expert-v2|exp_1|diffusion-ql|T-5|lr_decay|ms-offline|k-1|0|dual_diffusion] --------------  -----------
+24-12-17.20:07|[walker2d-medium-expert-v2|exp_1|diffusion-ql|T-5|lr_decay|ms-offline|k-1|0|dual_diffusion] Trained Epochs  100
+24-12-17.20:07|[walker2d-medium-expert-v2|exp_1|diffusion-ql|T-5|lr_decay|ms-offline|k-1|0|dual_diffusion] BC Loss           0.0339163
+24-12-17.20:07|[walker2d-medium-expert-v2|exp_1|diffusion-ql|T-5|lr_decay|ms-offline|k-1|0|dual_diffusion] QL Loss          -1
+24-12-17.20:07|[walker2d-medium-expert-v2|exp_1|diffusion-ql|T-5|lr_decay|ms-offline|k-1|0|dual_diffusion] Actor Loss       -0.966088
+24-12-17.20:07|[walker2d-medium-expert-v2|exp_1|diffusion-ql|T-5|lr_decay|ms-offline|k-1|0|dual_diffusion] Critic Loss      33.0105
+24-12-17.20:07|[walker2d-medium-expert-v2|exp_1|diffusion-ql|T-5|lr_decay|ms-offline|k-1|0|dual_diffusion] --------------  -----------
+------------------------------------------------------------
+Evaluation over 10 episodes: 172.96 0.04
+------------------------------------------------------------
+24-12-17.20:07|[walker2d-medium-expert-v2|exp_1|diffusion-ql|T-5|lr_decay|ms-offline|k-1|0|dual_diffusion] -------------------------  -----------
+24-12-17.20:07|[walker2d-medium-expert-v2|exp_1|diffusion-ql|T-5|lr_decay|ms-offline|k-1|0|dual_diffusion] Average Episodic Reward    172.958
+24-12-17.20:07|[walker2d-medium-expert-v2|exp_1|diffusion-ql|T-5|lr_decay|ms-offline|k-1|0|dual_diffusion] Average Episodic N-Reward    0.0373212
+24-12-17.20:07|[walker2d-medium-expert-v2|exp_1|diffusion-ql|T-5|lr_decay|ms-offline|k-1|0|dual_diffusion] -------------------------  -----------

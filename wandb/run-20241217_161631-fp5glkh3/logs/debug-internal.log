@@ -1,0 +1,16 @@
+{"time":"2024-12-17T16:16:31.610586783-06:00","level":"INFO","msg":"using version","core version":"0.19.1"}
+{"time":"2024-12-17T16:16:31.610598861-06:00","level":"INFO","msg":"created symlink","path":"/home/tori/Documents/research/Diffusion-Policies-for-Offline-RL/wandb/run-20241217_161631-fp5glkh3/logs/debug-core.log"}
+{"time":"2024-12-17T16:16:31.713072187-06:00","level":"INFO","msg":"created new stream","id":"fp5glkh3"}
+{"time":"2024-12-17T16:16:31.713093843-06:00","level":"INFO","msg":"stream: started","id":"fp5glkh3"}
+{"time":"2024-12-17T16:16:31.71318119-06:00","level":"INFO","msg":"writer: Do: started","stream_id":"fp5glkh3"}
+{"time":"2024-12-17T16:16:31.713195746-06:00","level":"INFO","msg":"sender: started","stream_id":"fp5glkh3"}
+{"time":"2024-12-17T16:16:31.713239535-06:00","level":"INFO","msg":"handler: started","stream_id":"fp5glkh3"}
+{"time":"2024-12-17T16:16:31.948503784-06:00","level":"INFO","msg":"Starting system monitor"}
+{"time":"2024-12-17T16:16:39.213995604-06:00","level":"INFO","msg":"stream: closing","id":"fp5glkh3"}
+{"time":"2024-12-17T16:16:39.214007963-06:00","level":"INFO","msg":"Stopping system monitor"}
+{"time":"2024-12-17T16:16:39.214381164-06:00","level":"INFO","msg":"Stopped system monitor"}
+{"time":"2024-12-17T16:16:39.610304095-06:00","level":"INFO","msg":"fileTransfer: Close: file transfer manager closed"}
+{"time":"2024-12-17T16:16:39.815310343-06:00","level":"INFO","msg":"handler: closed","stream_id":"fp5glkh3"}
+{"time":"2024-12-17T16:16:39.81532315-06:00","level":"INFO","msg":"writer: Close: closed","stream_id":"fp5glkh3"}
+{"time":"2024-12-17T16:16:39.815351079-06:00","level":"INFO","msg":"sender: closed","stream_id":"fp5glkh3"}
+{"time":"2024-12-17T16:16:39.815354549-06:00","level":"INFO","msg":"stream: closed","id":"fp5glkh3"}
