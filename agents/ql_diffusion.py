@@ -165,7 +165,7 @@ class Diffusion_QL(object):
                 bc_loss2_tensor = self.actor2.loss(action, state, ts)
                 min_loss = torch.mean(temp * -torch.logsumexp(-torch.stack([bc_loss_tensor, bc_loss2_tensor]) / temp, dim=0))
                 bc_loss = torch.where(bc_loss_tensor < bc_loss2_tensor, bc_loss_tensor, bc_loss2_tensor).mean()
-                bc_loss2 = torch.where(bc_loss2_tensor < bc_loss_tensor, bc_loss_tensor, torch.tensor(0)).sum()
+                bc_loss2 = torch.where(bc_loss2_tensor < bc_loss_tensor, bc_loss_tensor, torch.tensor(0)).mean()
                 
             new_action = self.actor(state)
 
