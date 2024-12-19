@@ -20,7 +20,7 @@
   "max_action": 1.0,
   "max_q_backup": false,
   "ms": "offline",
-  "num_epochs": 2000,
+  "num_epochs": 4000,
   "num_steps_per_epoch": 1000,
   "output_dir": "results",
   "reward_tune": "no",

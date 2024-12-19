@@ -158,13 +158,15 @@ class Diffusion_QL(object):
             bc_loss = torch.mean(bc_loss_tensor)
 
             if self.dual_diffusion: # calculating the raw loss for the second actor and finding the minimum loss
-                bc_loss2_tensor = self.actor2.loss(action, state, ts)
-                min_loss = torch.mean(torch.minimum(bc_loss_tensor, bc_loss2_tensor))
-                bc_loss = torch.where(bc_loss_tensor < bc_loss2_tensor, bc_loss_tensor, bc_loss2_tensor).mean()
-                assert min_loss.shape == bc_loss.shape # TODO
-                bc_loss2 = torch.where( bc_loss2_tensor < bc_loss_tensor, bc_loss2_tensor, torch.tensor(0)).mean()
+                temp = 0.0001 * (self.step + 1) 
+                if temp >10:
+                    temp = 10
                 
-            
+                bc_loss2_tensor = self.actor2.loss(action, state, ts)
+                min_loss = torch.mean(temp * -torch.logsumexp(-torch.stack([bc_loss_tensor, bc_loss2_tensor]) / temp, dim=0))
+                bc_loss = torch.where(bc_loss_tensor < bc_loss2_tensor, bc_loss_tensor, bc_loss2_tensor).mean()
+                bc_loss2 = torch.where(bc_loss2_tensor < bc_loss_tensor, torch.tensor(1), torch.tensor(0)).sum()
+                
             new_action = self.actor(state)
 
             q1_new_action, q2_new_action = self.critic(state, new_action)
@@ -174,13 +176,10 @@ class Diffusion_QL(object):
                 q_loss = - q2_new_action.mean() / q1_new_action.abs().mean().detach()
 
 
-            actor_loss = bc_loss + self.eta * q_loss # I also tried using min_loss here but it didn't work
+            actor_loss = min_loss + self.eta * q_loss 
 
             self.actor_optimizer.zero_grad()
             actor_loss.backward()
-            # if self.dual_diffusion:
-            #     self.actor2_optimizer.zero_grad() 
-            #     bc_loss2.backward()
 
             if self.grad_norm > 0: 
                 actor_grad_norms = nn.utils.clip_grad_norm_(self.actor.parameters(), max_norm=self.grad_norm, norm_type=2)
@@ -228,10 +227,7 @@ class Diffusion_QL(object):
         state = torch.FloatTensor(state.reshape(1, -1)).to(self.device)
         state_rpt = torch.repeat_interleave(state, repeats=50, dim=0)
         with torch.no_grad():
-            if self.dual_diffusion:
-                action = (self.actor.sample(state_rpt) + self.actor2.sample(state_rpt))/2
-            else:
-                action = self.actor.sample(state_rpt)
+            action = self.actor.sample(state_rpt)
             q_value = self.critic_target.q_min(state_rpt, action).flatten()
             idx = torch.multinomial(F.softmax(q_value), 1)
         return action[idx].cpu().data.numpy().flatten()
