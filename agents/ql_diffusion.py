@@ -165,7 +165,7 @@ class Diffusion_QL(object):
                 bc_loss2_tensor = self.actor2.loss(action, state, ts)
                 min_loss = torch.mean(temp * -torch.logsumexp(-torch.stack([bc_loss_tensor, bc_loss2_tensor]) / temp, dim=0))
                 bc_loss = torch.where(bc_loss_tensor < bc_loss2_tensor, bc_loss_tensor, bc_loss2_tensor).mean()
-                bc_loss2 = torch.where(bc_loss2_tensor < bc_loss_tensor, torch.tensor(1), torch.tensor(0)).sum()
+                bc_loss2 = torch.where(bc_loss2_tensor < bc_loss_tensor, bc_loss_tensor, torch.tensor(0)).sum()
                 
             new_action = self.actor(state)
 
@@ -179,13 +179,15 @@ class Diffusion_QL(object):
             actor_loss = min_loss + self.eta * q_loss 
 
             self.actor_optimizer.zero_grad()
-            actor_loss.backward()
-
-            if self.grad_norm > 0: 
-                actor_grad_norms = nn.utils.clip_grad_norm_(self.actor.parameters(), max_norm=self.grad_norm, norm_type=2)
-            self.actor_optimizer.step()
-            if self.dual_diffusion:
-                self.actor2_optimizer.step()
+            if np.random.uniform() < 0.01:
+                if self.grad_norm > 0: 
+                    actor_grad_norms = nn.utils.clip_grad_norm_(self.actor.parameters(), max_norm=self.grad_norm, norm_type=2)
+                actor_loss.backward()
+                self.actor_optimizer.step()
+            else:
+                bc_loss2.backward()
+                if self.dual_diffusion:
+                    self.actor2_optimizer.step()
 
 
             """ Step Target network """
@@ -235,7 +237,7 @@ class Diffusion_QL(object):
     def ground_truth_check(self, replay_buffer, batch_size):
         state, action, _, _, _, source = replay_buffer.sample(batch_size)
         ts = torch.randint(0, self.n_timesteps, (batch_size,), device=action.device).long()
-        estimated_datasets = torch.where(self.actor.loss(action, state, ts) < self.actor2.loss(action, state, ts),
+        estimated_datasets = torch.where(self.actor.loss(action, state, ts) > self.actor2.loss(action, state, ts),
                                           torch.tensor(0, device=action.device),
                                           torch.tensor(1, device=action.device))
         return estimated_datasets, source
