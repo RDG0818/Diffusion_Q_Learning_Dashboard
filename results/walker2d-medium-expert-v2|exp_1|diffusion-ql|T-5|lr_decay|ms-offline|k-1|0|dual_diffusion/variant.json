@@ -8,7 +8,7 @@
   "dir": "results",
   "discount": 0.99,
   "dual_diffusion": true,
-  "early_stop": true,
+  "early_stop": false,
   "env_name": "walker2d-medium-expert-v2",
   "eta": 1.0,
   "eval_episodes": 10,
