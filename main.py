@@ -107,8 +107,8 @@ def train_agent(env, state_dim, action_dim, max_action, device, output_dir, args
         logger.record_tabular('Actor Loss', np.mean(loss_metric['actor_loss']))
         logger.record_tabular('Critic Loss', np.mean(loss_metric['critic_loss']))
         wandb.log({'BC Loss': np.mean(loss_metric['bc_loss']),
-                   'BC Loss 2': np.sum(loss_metric['bc_loss2']),
-                   'Min Loss': np.mean(loss_metric['min_loss']),
+                   #'BC Loss 2': np.sum(loss_metric['bc_loss2']),
+                   #'Min Loss': np.mean(loss_metric['min_loss']),
                    'QL Loss': np.mean(loss_metric['ql_loss']), 
                    'Actor Loss': np.mean(loss_metric['actor_loss']),
                    'Critic Loss': np.mean(loss_metric['critic_loss'])})
@@ -129,7 +129,7 @@ def train_agent(env, state_dim, action_dim, max_action, device, output_dir, args
                    'Average Episodic N-Reward': eval_norm_res})
         logger.dump_tabular()
         
-        # # Checking dual diffusions ability to differentiate sources 
+        # Checking dual diffusions ability to differentiate sources 
         estimated, ground_truth = agent.ground_truth_check(replay_buffer=data_sampler, batch_size=256)
         estimated = estimated.cpu().numpy()
         ground_truth = ground_truth.cpu().numpy()

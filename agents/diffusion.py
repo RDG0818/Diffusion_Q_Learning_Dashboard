@@ -6,6 +6,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import numpy as np
 
 
 from agents.helpers import (cosine_beta_schedule,
@@ -17,7 +18,7 @@ from utils.utils import Progress, Silent
 
 
 class Diffusion(nn.Module):
-    def __init__(self, state_dim, action_dim, model, max_action,
+    def __init__(self, state_dim, action_dim, model, model2, max_action,
                  beta_schedule='linear', n_timesteps=100,
                  loss_type='l2', clip_denoised=True, predict_epsilon=True):
         super(Diffusion, self).__init__()
@@ -26,6 +27,7 @@ class Diffusion(nn.Module):
         self.action_dim = action_dim
         self.max_action = max_action
         self.model = model
+        self.model2 = model2
 
         if beta_schedule == 'linear':
             betas = linear_beta_schedule(n_timesteps)
@@ -163,20 +165,20 @@ class Diffusion(nn.Module):
         x_noisy = self.q_sample(x_start=x_start, t=t, noise=noise)
 
         x_recon = self.model(x_noisy, t, state)
-        #x_recon2 = self.model2(x_noisy, t, state)
+        x_recon2 = self.model2(x_noisy, t, state)
 
         assert noise.shape == x_recon.shape
 
         if self.predict_epsilon:
-            loss = self.loss_fn(x_recon, noise, weights)
+            loss = (self.loss_fn(x_recon, noise, weights), self.loss_fn(x_recon2, noise, weights))
         else:
-            loss = self.loss_fn(x_recon, x_start, weights)
+            loss = (self.loss_fn(x_recon, x_start, weights), self.loss_fn(x_recon2, x_start, weights))
 
         return loss
 
-    def loss(self, x, state, ts, weights=1.0):
+    def loss(self, x, state, weights=1.0):
         batch_size = len(x)
-        t = ts
+        t = torch.randint(0, self.n_timesteps, (batch_size,), device=x.device).long()
         return self.p_losses(x, state, t, weights)
 
     def forward(self, state, *args, **kwargs):
