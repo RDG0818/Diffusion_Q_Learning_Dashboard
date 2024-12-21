@@ -139,10 +139,8 @@ class Diffusion_QL(object):
             self.critic_optimizer.step()
 
             """ Policy Training """
-            if np.random.uniform() < 0.5:
-                bc_loss = self.actor.loss(action, state)[0].mean()
-            else:
-                bc_loss = self.actor.loss(action, state)[1].mean()
+
+            bc_loss = self.actor.loss(action, state).mean()
 
             new_action = self.actor(state)
 
@@ -201,7 +199,8 @@ class Diffusion_QL(object):
     
     def ground_truth_check(self, replay_buffer, batch_size=256):
         state, action, _, _, _, source = replay_buffer.sample(batch_size)
-        estimated_datasets = torch.where(self.actor.loss(action, state)[0] > self.actor.loss(action, state)[1],
+        losses = self.actor.loss(action, state, individual=True)
+        estimated_datasets = torch.where(losses[0] > losses[1],
                                           torch.tensor(0, device=action.device),
                                           torch.tensor(1, device=action.device))
         return estimated_datasets, source

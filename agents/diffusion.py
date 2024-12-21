@@ -159,27 +159,33 @@ class Diffusion(nn.Module):
 
         return sample
 
-    def p_losses(self, x_start, state, t, weights=1.0):
+    def p_losses(self, x_start, state, t, weights=1.0, individual=False):
         noise = torch.randn_like(x_start)
 
         x_noisy = self.q_sample(x_start=x_start, t=t, noise=noise)
 
-        x_recon = self.model(x_noisy, t, state)
-        x_recon2 = self.model2(x_noisy, t, state)
+        eta = .5 # denotes percentage of good data
+        
+        x_recon = .5 * self.model(x_noisy, t, state) + .5 * self.model2(x_noisy, t, state)
+        if individual:
+            x_recon = self.model(x_noisy, t, state)
+            x_recon2 = self.model2(x_noisy, t, state)
 
         assert noise.shape == x_recon.shape
 
         if self.predict_epsilon:
-            loss = (self.loss_fn(x_recon, noise, weights), self.loss_fn(x_recon2, noise, weights))
+            if individual: loss = (self.loss_fn(x_recon, noise, weights), self.loss_fn(x_recon2, noise, weights))
+            else: loss = self.loss_fn(x_recon, noise, weights)
         else:
-            loss = (self.loss_fn(x_recon, x_start, weights), self.loss_fn(x_recon2, x_start, weights))
+            if individual: loss = (self.loss_fn(x_recon, x_start, weights), self.loss_fn(x_recon2, x_start, weights))
+            loss = self.loss_fn(x_recon, x_start, weights)
 
         return loss
 
-    def loss(self, x, state, weights=1.0):
+    def loss(self, x, state, weights=1.0, individual=False):
         batch_size = len(x)
         t = torch.randint(0, self.n_timesteps, (batch_size,), device=x.device).long()
-        return self.p_losses(x, state, t, weights)
+        return self.p_losses(x, state, t, weights, individual)
 
     def forward(self, state, *args, **kwargs):
         return self.sample(state, *args, **kwargs)
