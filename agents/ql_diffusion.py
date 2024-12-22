@@ -166,15 +166,15 @@ class Diffusion_QL(object):
                 # q_vals = (q1 + q2) / 2
                 # q_vals = q_vals.detach()
                 # q_mean = q_vals.mean().detach()
-                # expert_actions = torch.where(q_vals > q_mean, action, torch.tensor(0))
-                # medium_actions = torch.where(q_vals < q_mean, action, torch.tensor(0))
+                # expert_action = torch.where(q_vals > q_mean, action, torch.tensor(0))
+                # medium_action = torch.where(q_vals < q_mean, action, torch.tensor(0))
                 bc_loss_tensor = self.actor.loss(action, state, ts)
                 bc_loss2_tensor = self.actor2.loss(action, state, ts) 
-                eta = torch.randint(0, 2, (batch_size,), device=self.device)
-                min_loss = torch.mean(eta * bc_loss_tensor + (1 - eta) * bc_loss2_tensor)
+                # eta = torch.randint(0, 2, (batch_size,), device=self.device)
+                # min_loss = torch.mean(eta * bc_loss_tensor + (1 - eta) * bc_loss2_tensor)
                 #min_loss = torch.mean(temp * -torch.logsumexp(-torch.stack([bc_loss_tensor, bc_loss2_tensor]) / temp, dim=0))
-                # bc_loss = (bc_loss_tensor).mean()
-                # bc_loss2 = (bc_loss2_tensor).mean()
+                bc_loss = (bc_loss_tensor).mean()
+                bc_loss2 = (bc_loss2_tensor).mean()
                 # in the training loss and not in the training loss
             new_action = self.actor(state)
 
@@ -183,8 +183,15 @@ class Diffusion_QL(object):
                 q_loss = - q1_new_action.mean() / q2_new_action.abs().mean().detach()
             else:
                 q_loss = - q2_new_action.mean() / q1_new_action.abs().mean().detach()
+            actor_loss = bc_loss + self.eta * q_loss
 
-            actor_loss = min_loss + self.eta * q_loss
+            new_action2 = self.actor2(state)
+            q1_new_action2, q2_new_action2 = self.critic(state, new_action2)
+            if np.random.uniform() > 0.5:
+                q_loss2 = - q1_new_action2.mean() / q2_new_action2.abs().mean().detach()
+            else:
+                q_loss2 = - q2_new_action2.mean() / q1_new_action2.abs().mean().detach()
+            actor2_loss = bc_loss2 - self.eta * q_loss2
 
             self.actor_optimizer.zero_grad()
             if self.grad_norm > 0: 
@@ -194,7 +201,7 @@ class Diffusion_QL(object):
     
             if self.dual_diffusion:
                 self.actor2_optimizer.zero_grad()
-                #bc_loss2.backward()
+                actor2_loss.backward()
                 self.actor2_optimizer.step()
 
 
@@ -222,8 +229,8 @@ class Diffusion_QL(object):
             metric['ql_loss'].append(q_loss.item())
             metric['critic_loss'].append(critic_loss.item())
             if self.dual_diffusion:
-                # metric['bc_loss2'].append(bc_loss2.item()) 
-                metric['min_loss'].append(min_loss.item())
+                metric['bc_loss2'].append(bc_loss2.item()) 
+                # metric['min_loss'].append(min_loss.item())
 
         if self.lr_decay: 
             self.actor_lr_scheduler.step()
@@ -241,6 +248,24 @@ class Diffusion_QL(object):
             q_value = self.critic_target.q_min(state_rpt, action).flatten()
             idx = torch.multinomial(F.softmax(q_value), 1)
         return action[idx].cpu().data.numpy().flatten()
+
+    def sample_action_tensor(self, state):
+        state = torch.FloatTensor(state.reshape(1, -1)).to(self.device)
+        state_rpt = torch.repeat_interleave(state, repeats=50, dim=0)
+        with torch.no_grad():
+            action = self.actor.sample(state_rpt)
+            q_value = self.critic_target.q_min(state_rpt, action).flatten()
+            idx = torch.multinomial(F.softmax(q_value), 1)
+        return action[idx].cpu()
+
+    def sample_action_tensor2(self, state):
+        state = torch.FloatTensor(state.reshape(1, -1)).to(self.device)
+        state_rpt = torch.repeat_interleave(state, repeats=50, dim=0)
+        with torch.no_grad():
+            action = self.actor2.sample(state_rpt)
+            q_value = self.critic_target.q_min(state_rpt, action).flatten()
+            idx = torch.multinomial(F.softmin(q_value), 1)
+        return action[idx].cpu()
     
     def ground_truth_check(self, replay_buffer, batch_size):
         state, action, _, _, _, source = replay_buffer.sample(batch_size)
@@ -249,6 +274,9 @@ class Diffusion_QL(object):
                                           torch.tensor(0, device=action.device),
                                           torch.tensor(1, device=action.device))
         return estimated_datasets, source
+    
+    def get_sample_from_buffer(self, replay_buffer, batch_size):
+        return replay_buffer.sample(batch_size)
 
     def save_model(self, dir, id=None):
         if id is not None:

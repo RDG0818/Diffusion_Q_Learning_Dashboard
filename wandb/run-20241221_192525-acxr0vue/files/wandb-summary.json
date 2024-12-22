@@ -1,0 +1,1 @@
+{"Critic Loss":22.410937551792262,"_runtime":400.888848418,"_wandb":{"runtime":400},"Min Loss":NaN,"Actor Loss":-0.95144225045681,"_timestamp":1.7348311259105973e+09,"_step":1,"BC Loss":NaN,"BC Loss 2":2380.219794280827,"Average Episodic Reward":3947.1299796486383,"QL Loss":-0.999981960439682,"Average Episodic N-Reward":0.8594606275475466}

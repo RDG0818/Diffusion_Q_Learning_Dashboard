@@ -28,7 +28,7 @@ hyperparameters = {
     'walker2d-medium-replay-v2':     {'lr': 3e-4, 'eta': 1.0,   'max_q_backup': False,  'reward_tune': 'no',          'eval_freq': 50, 'num_epochs': 2000, 'gn': 4.0,  'top_k': 1},
     'halfcheetah-medium-expert-v2':  {'lr': 3e-4, 'eta': 1.0,   'max_q_backup': False,  'reward_tune': 'no',          'eval_freq': 50, 'num_epochs': 2000, 'gn': 7.0,  'top_k': 0},
     'hopper-medium-expert-v2':       {'lr': 3e-4, 'eta': 1.0,   'max_q_backup': False,  'reward_tune': 'no',          'eval_freq': 50, 'num_epochs': 2000, 'gn': 5.0,  'top_k': 2},
-    'walker2d-medium-expert-v2':     {'lr': 3e-4, 'eta': 1.0,   'max_q_backup': False,  'reward_tune': 'no',          'eval_freq': 50, 'num_epochs': 4000, 'gn': 5.0,  'top_k': 1},
+    'walker2d-medium-expert-v2':     {'lr': 3e-4, 'eta': 2.0,   'max_q_backup': False,  'reward_tune': 'no',          'eval_freq': 10, 'num_epochs': 4000, 'gn': 5.0,  'top_k': 1},
     'walker2d-expert-v2':            {'lr': 3e-4, 'eta': 1.0,   'max_q_backup': False,  'reward_tune': 'no',          'eval_freq': 50, 'num_epochs': 100, 'gn': 5.0,  'top_k': 1},
     'antmaze-umaze-v0':              {'lr': 3e-4, 'eta': 0.5,   'max_q_backup': False,  'reward_tune': 'cql_antmaze', 'eval_freq': 50, 'num_epochs': 1000, 'gn': 2.0,  'top_k': 2},
     'antmaze-umaze-diverse-v0':      {'lr': 3e-4, 'eta': 2.0,   'max_q_backup': True,   'reward_tune': 'cql_antmaze', 'eval_freq': 50, 'num_epochs': 1000, 'gn': 3.0,  'top_k': 2},
@@ -130,13 +130,7 @@ def train_agent(env, state_dim, action_dim, max_action, device, output_dir, args
         logger.dump_tabular()
         
         # # Checking dual diffusions ability to differentiate sources 
-        estimated, ground_truth = agent.ground_truth_check(replay_buffer=data_sampler, batch_size=256)
-        estimated = estimated.cpu().numpy()
-        ground_truth = ground_truth.cpu().numpy()
-
-        cm = sklearn.metrics.confusion_matrix(ground_truth, estimated)
-        print("Confusion Matrix:")
-        print(cm)
+        eval_classifier(agent, data_sampler, batch_size=256)
 
         bc_loss = np.mean(loss_metric['bc_loss'])
         if args.early_stop:
@@ -176,6 +170,24 @@ def train_agent(env, state_dim, action_dim, max_action, device, output_dir, args
 
 # Runs policy for X episodes and returns average reward
 # A fixed seed is used for the eval environment
+def eval_classifier(policy, data_sampler, batch_size):
+    state, action, _, _, _, source = policy.get_sample_from_buffer(data_sampler, batch_size)
+    estimate = []
+    state = state.to('cpu')
+    action = action.to('cpu')
+    source = source.to('cpu')
+    for a, s in zip(action, state):
+        actor_action = policy.sample_action_tensor(s)
+        actor2_action = policy.sample_action_tensor2(s)
+        if torch.nn.functional.mse_loss(actor_action, a) < torch.nn.functional.mse_loss(actor2_action, a):
+            estimate.append(1)
+        else:
+            estimate.append(0)
+    cm = sklearn.metrics.confusion_matrix(source, estimate)
+    print("Confusion Matrix:")
+    print(cm)
+
+
 def eval_policy(policy, env_name, seed, eval_episodes=10):
     eval_env = gym.make(env_name)
     eval_env.seed(seed + 100)
@@ -231,7 +243,7 @@ if __name__ == "__main__":
     # parser.add_argument("--top_k", default=1, type=int)
 
     # parser.add_argument("--lr", default=3e-4, type=float)
-    # parser.add_argument("--eta", default=1.0, type=float)
+    parser.add_argument("--eta", default=2.0, type=float)
     # parser.add_argument("--max_q_backup", action='store_true')
     # parser.add_argument("--reward_tune", default='no', type=str)
     # parser.add_argument("--gn", default=-1.0, type=float)
