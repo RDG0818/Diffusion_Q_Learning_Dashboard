@@ -128,7 +128,7 @@ class Diffusion_QL(object):
 
             """ Q Training """
             current_q1, current_q2 = self.critic(state, action)
-
+            #TODO: Make next_action be half from actor 1 and half from actor 2
             if self.max_q_backup:
                 next_state_rpt = torch.repeat_interleave(next_state, repeats=10, dim=0)
                 next_action_rpt = self.ema_model(next_state_rpt)
@@ -162,14 +162,14 @@ class Diffusion_QL(object):
                 # if temp >10:
                 #     temp = 10
                 
-                # q1, q2 = self.critic(state, action)
-                # q_vals = (q1 + q2) / 2
-                # q_vals = q_vals.detach()
-                # q_mean = q_vals.mean().detach()
-                # expert_action = torch.where(q_vals > q_mean, action, torch.tensor(0))
-                # medium_action = torch.where(q_vals < q_mean, action, torch.tensor(0))
-                bc_loss_tensor = self.actor.loss(action, state, ts)
-                bc_loss2_tensor = self.actor2.loss(action, state, ts) 
+                q1, q2 = self.critic(state, action)
+                q_vals = (q1 + q2) / 2
+                q_vals = q_vals.detach()
+                q_mean = q_vals.mean().detach()
+                expert_action = torch.where(q_vals > q_mean, action, torch.tensor(0))
+                medium_action = torch.where(q_vals < q_mean, action, torch.tensor(0))
+                bc_loss_tensor = self.actor.loss(expert_action, state, ts)
+                bc_loss2_tensor = self.actor2.loss(medium_action, state, ts) 
                 # eta = torch.randint(0, 2, (batch_size,), device=self.device)
                 # min_loss = torch.mean(eta * bc_loss_tensor + (1 - eta) * bc_loss2_tensor)
                 #min_loss = torch.mean(temp * -torch.logsumexp(-torch.stack([bc_loss_tensor, bc_loss2_tensor]) / temp, dim=0))
@@ -191,7 +191,7 @@ class Diffusion_QL(object):
                 q_loss2 = - q1_new_action2.mean() / q2_new_action2.abs().mean().detach()
             else:
                 q_loss2 = - q2_new_action2.mean() / q1_new_action2.abs().mean().detach()
-            actor2_loss = bc_loss2 - self.eta * q_loss2
+            actor2_loss = bc_loss2 - self.eta * q_loss2 * .7
 
             self.actor_optimizer.zero_grad()
             if self.grad_norm > 0: 
@@ -264,7 +264,7 @@ class Diffusion_QL(object):
         with torch.no_grad():
             action = self.actor2.sample(state_rpt)
             q_value = self.critic_target.q_min(state_rpt, action).flatten()
-            idx = torch.multinomial(F.softmin(q_value), 1)
+            idx = torch.multinomial(F.softmax(q_value), 1)
         return action[idx].cpu()
     
     def ground_truth_check(self, replay_buffer, batch_size):
