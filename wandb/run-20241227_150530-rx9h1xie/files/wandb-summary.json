@@ -1,0 +1,1 @@
+{"Actor Loss":-0.45719867443144324,"_timestamp":1.7353339488117726e+09,"Average Episodic Reward":3190.2332139887703,"Average Episodic N-Reward":0.6945834740815532,"_wandb":{"runtime":460},"Critic Loss":25.99823547797203,"BC Loss 2":0.042824307897873226,"_runtime":418.381059956,"_step":5,"BC Loss":0.042774777497537435,"QL Loss":-0.9999469037413597}
