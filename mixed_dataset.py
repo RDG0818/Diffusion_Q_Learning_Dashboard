@@ -7,7 +7,6 @@ def mix_datasets(first_dataset_name, second_dataset_name) -> dict:
     env2 = gym.make(second_dataset_name)
     medium_data = d4rl.qlearning_dataset(env)
     expert_data = d4rl.qlearning_dataset(env2)
-
     combined_observations = np.concatenate(
         [medium_data["observations"], expert_data["observations"]]
     )

@@ -44,7 +44,21 @@ class Critic(nn.Module):
     def q_min(self, state, action):
         q1, q2 = self.forward(state, action)
         return torch.min(q1, q2)
-
+    
+class DeltaCritic(nn.Module):
+    def __init__(self, state_dim, action_dim, hidden_dim=256):
+        self.q = nn.Sequential(nn.Linear(state_dim + action_dim, hidden_dim),
+                                      nn.Mish(),
+                                      nn.Linear(hidden_dim, hidden_dim),
+                                      nn.Mish(),
+                                      nn.Linear(hidden_dim, hidden_dim),
+                                      nn.Mish(),
+                                      nn.Linear(hidden_dim, 1))
+    
+    def forward(self, state, action):
+        x = torch.cat([state, action], dim=-1)
+        q_value = self.q(x)
+        return torch.abs(q_value)
 
 class Diffusion_QL(object):
     def __init__(self,
@@ -65,10 +79,12 @@ class Diffusion_QL(object):
                  lr_decay=False,
                  lr_maxt=1000,
                  grad_norm=1.0,
-                 dual_diffusion=False
+                 dual_diffusion=False,
+                 dual_critic=False,
                  ):
 
         self.dual_diffusion = dual_diffusion
+        self.dual_critic = dual_critic
         
         self.model = MLP(state_dim=state_dim, action_dim=action_dim, device=device)
         
@@ -92,11 +108,14 @@ class Diffusion_QL(object):
         self.step_start_ema = step_start_ema
         self.ema = EMA(ema_decay)
         self.ema_model = copy.deepcopy(self.actor)
+        self.ema_model2 = copy.deepcopy(self.actor2)
         self.update_ema_every = update_ema_every
 
         self.critic = Critic(state_dim, action_dim).to(device)
         self.critic_target = copy.deepcopy(self.critic)
         self.critic_optimizer = torch.optim.Adam(self.critic.parameters(), lr=3e-4)
+        self.delta_critic = DeltaCritic(state_dim, action_dim).to(device)
+        self.delta_critic_optimizer = torch.optim.Adam(self.delta_critic.parameters(), lr=3e-4)
 
         if lr_decay: # Added second actor to lr scheduler
             self.actor_lr_scheduler = CosineAnnealingLR(self.actor_optimizer, T_max=lr_maxt, eta_min=0.)
@@ -118,6 +137,7 @@ class Diffusion_QL(object):
         if self.step < self.step_start_ema:
             return
         self.ema.update_model_average(self.ema_model, self.actor)
+        self.ema.update_model_average(self.ema_model2, self.actor2)
 
     def train(self, replay_buffer, iterations, batch_size=100, log_writer=None):
 
@@ -128,16 +148,30 @@ class Diffusion_QL(object):
 
             """ Q Training """
             current_q1, current_q2 = self.critic(state, action)
-            #TODO: Make next_action be half from actor 1 and half from actor 2
+
             if self.max_q_backup:
                 next_state_rpt = torch.repeat_interleave(next_state, repeats=10, dim=0)
-                next_action_rpt = self.ema_model(next_state_rpt)
+                if self.dual_critic:
+                    half = next_state.size(0) // 2
+                    next_state_first_half = next_state[:half]
+                    next_state_second_half = next_state[half:]
+                    next_state_first_rpt = torch.repeat_interleave(next_state_first_half, repeats=10, dim=0)
+                    next_state_second_rpt = torch.repeat_interleave(next_state_second_half, repeats=10, dim=0)
+                    next_action_rpt = torch.cat((self.ema_model(next_state_first_rpt), self.ema_model2(next_state_second_rpt)), dim=0)
+                else:
+                    next_action_rpt = self.ema_model(next_state_rpt)
                 target_q1, target_q2 = self.critic_target(next_state_rpt, next_action_rpt)
                 target_q1 = target_q1.view(batch_size, 10).max(dim=1, keepdim=True)[0]
                 target_q2 = target_q2.view(batch_size, 10).max(dim=1, keepdim=True)[0]
                 target_q = torch.min(target_q1, target_q2)
             else:
-                next_action = self.ema_model(next_state)
+                if self.dual_critic:
+                    half = next_state.size(0) // 2
+                    next_state_first_half = next_state[:half]
+                    next_state_second_half = next_state[half:]
+                    next_action = torch.cat((self.ema_model(next_state_first_half), self.ema_model2(next_state_second_half)), dim=0)
+                else:
+                    next_action = self.ema_model(next_state)
                 target_q1, target_q2 = self.critic_target(next_state, next_action)
                 target_q = torch.min(target_q1, target_q2)
 
@@ -175,7 +209,6 @@ class Diffusion_QL(object):
                 #min_loss = torch.mean(temp * -torch.logsumexp(-torch.stack([bc_loss_tensor, bc_loss2_tensor]) / temp, dim=0))
                 bc_loss = (bc_loss_tensor).mean()
                 bc_loss2 = (bc_loss2_tensor).mean()
-                # in the training loss and not in the training loss
             new_action = self.actor(state)
 
             q1_new_action, q2_new_action = self.critic(state, new_action)
@@ -191,7 +224,9 @@ class Diffusion_QL(object):
                 q_loss2 = - q1_new_action2.mean() / q2_new_action2.abs().mean().detach()
             else:
                 q_loss2 = - q2_new_action2.mean() / q1_new_action2.abs().mean().detach()
-            actor2_loss = bc_loss2 - self.eta * q_loss2 * .7
+            actor2_loss = bc_loss2 + self.eta * q_loss2
+
+            #self.delta_critic(state, action)
 
             self.actor_optimizer.zero_grad()
             if self.grad_norm > 0: 
@@ -225,7 +260,7 @@ class Diffusion_QL(object):
                 log_writer.add_scalar('Target_Q Mean', target_q.mean().item(), self.step)
 
             metric['actor_loss'].append(actor_loss.item())
-            # metric['bc_loss'].append(bc_loss.item())
+            metric['bc_loss'].append(bc_loss.item())
             metric['ql_loss'].append(q_loss.item())
             metric['critic_loss'].append(critic_loss.item())
             if self.dual_diffusion:
@@ -245,8 +280,12 @@ class Diffusion_QL(object):
         state_rpt = torch.repeat_interleave(state, repeats=50, dim=0)
         with torch.no_grad():
             action = self.actor.sample(state_rpt)
+            action2 = self.actor2.sample(state_rpt)
             q_value = self.critic_target.q_min(state_rpt, action).flatten()
-            idx = torch.multinomial(F.softmax(q_value), 1)
+            q_value2 = self.critic_target.q_min(state_rpt, action2).flatten()
+            action = torch.cat((action, action2), dim=0)
+            q_value = torch.cat((q_value, q_value2), dim=0)
+            idx = torch.multinomial(F.softmax(q_value, dim=-1), 1)
         return action[idx].cpu().data.numpy().flatten()
 
     def sample_action_tensor(self, state):
@@ -255,8 +294,8 @@ class Diffusion_QL(object):
         with torch.no_grad():
             action = self.actor.sample(state_rpt)
             q_value = self.critic_target.q_min(state_rpt, action).flatten()
-            idx = torch.multinomial(F.softmax(q_value), 1)
-        return action[idx].cpu()
+            idx = torch.multinomial(F.softmax(q_value, dim=-1), 1)
+        return action[idx].cpu().flatten()
 
     def sample_action_tensor2(self, state):
         state = torch.FloatTensor(state.reshape(1, -1)).to(self.device)
@@ -264,8 +303,8 @@ class Diffusion_QL(object):
         with torch.no_grad():
             action = self.actor2.sample(state_rpt)
             q_value = self.critic_target.q_min(state_rpt, action).flatten()
-            idx = torch.multinomial(F.softmax(q_value), 1)
-        return action[idx].cpu()
+            idx = torch.multinomial(F.softmin(q_value, dim=-1), 1)
+        return action[idx].cpu().flatten()
     
     def ground_truth_check(self, replay_buffer, batch_size):
         state, action, _, _, _, source = replay_buffer.sample(batch_size)
