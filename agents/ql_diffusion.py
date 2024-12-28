@@ -229,7 +229,7 @@ class Diffusion_QL(object):
             delta_q = self.delta_critic(state, action).mean()
             l1 = q_loss
             l2 = q_loss2
-            l3 = torch.norm(l2 + delta_q - l1, p=2)**2
+            l3 = torch.norm(-l2 + delta_q + l1, p=2)**2
             l4 = -delta_q
 
             a1, a2, a3, a4 = 1, 1, 1, 1
@@ -238,12 +238,10 @@ class Diffusion_QL(object):
 
             self.actor_optimizer.zero_grad()
             self.actor2_optimizer.zero_grad()
-            # actor2_loss.backward()
             self.delta_critic.zero_grad()
             if self.grad_norm > 0: 
                 actor_grad_norms = nn.utils.clip_grad_norm_(self.actor.parameters(), max_norm=self.grad_norm, norm_type=2)
                 total_loss.backward(retain_graph=True)
-            # actor_loss.backward(retain_graph=True)
             self.actor_optimizer.step()
             self.actor2_optimizer.step()
             self.delta_critic_optimizer.step()
