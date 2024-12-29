@@ -206,7 +206,9 @@ class Diffusion_QL(object):
                 # medium_action = torch.where(q_vals < q_mean, action, torch.tensor(0))
                 bc_loss_tensor = self.actor.loss(action, state, ts)
                 bc_loss2_tensor = self.actor2.loss(action, state, ts) 
-                temp = 1
+                temp = 0.00001 * (self.step + 1) + 0.1 #increasing temperature
+                if temp >50:
+                    temp = 50
                 min_loss = torch.mean(-torch.logsumexp(-torch.stack([bc_loss_tensor, bc_loss2_tensor]) * temp, dim=1)/temp)
                 #min_loss = F.softmin(torch.stack([bc_loss_tensor, bc_loss2_tensor]), dim=-1).mean()
                 # bc_loss = (bc_loss_tensor).mean()
