@@ -7,7 +7,7 @@
   "device": "cuda:0",
   "dir": "results",
   "discount": 0.99,
-  "dual_critic": false,
+  "dual_critic": true,
   "dual_diffusion": true,
   "early_stop": false,
   "env_name": "walker2d-medium-expert-v2",
