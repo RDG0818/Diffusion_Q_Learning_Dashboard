@@ -142,7 +142,8 @@ class Diffusion_QL(object):
 
     def train(self, replay_buffer, iterations, batch_size=100, log_writer=None):
 
-        metric = {'bc_loss': [], 'bc_loss2': [], 'min_loss': [], 'ql_loss': [], 'actor_loss': [], 'critic_loss': []}
+        metric = {'bc_loss': [], 'bc_loss2': [], 'min_loss': [], 'ql_loss': [], 'actor_loss': [], 'critic_loss': [], 'l1': [],
+                  'l2': [], 'l3': [], 'l4': [], 'total_loss': []}
         for _ in range(iterations):
             # Sample replay buffer / batch
             state, action, next_state, reward, not_done, source = replay_buffer.sample(batch_size)
@@ -206,31 +207,32 @@ class Diffusion_QL(object):
                 bc_loss_tensor = self.actor.loss(action, state, ts)
                 bc_loss2_tensor = self.actor2.loss(action, state, ts) 
                 temp = 1
-                min_loss = torch.mean(temp * -torch.logsumexp(-torch.stack([bc_loss_tensor, bc_loss2_tensor]) / temp, dim=0))
+                #min_loss = torch.mean(-torch.logsumexp(-torch.stack([bc_loss_tensor, bc_loss2_tensor]) * temp, dim=0)/temp)
+                min_loss = F.softmin(torch.stack([bc_loss_tensor, bc_loss2_tensor]), dim=-1).mean()
                 # bc_loss = (bc_loss_tensor).mean()
                 # bc_loss2 = (bc_loss2_tensor).mean()
             new_action = self.actor(state)
 
             q1_new_action, q2_new_action = self.critic(state, new_action)
             if np.random.uniform() > 0.5:
-                q_loss = - q1_new_action.mean() / q2_new_action.abs().mean().detach()
+                q_loss = - q1_new_action / q2_new_action.abs().detach()
             else:
-                q_loss = - q2_new_action.mean() / q1_new_action.abs().mean().detach()
+                q_loss = - q2_new_action / q1_new_action.abs().detach()
             # actor_loss = bc_loss + self.eta * q_loss
 
             new_action2 = self.actor2(state)
             q1_new_action2, q2_new_action2 = self.critic(state, new_action2)
             if np.random.uniform() > 0.5:
-                q_loss2 = - q1_new_action2.mean() / q2_new_action2.abs().mean().detach()
+                q_loss2 = - q1_new_action2 / q2_new_action2.abs().detach()
             else:
-                q_loss2 = - q2_new_action2.mean() / q1_new_action2.abs().mean().detach()
+                q_loss2 = - q2_new_action2 / q1_new_action2.abs().detach()
             # actor2_loss = bc_loss2 - self.eta * q_loss2
 
-            delta_q = self.delta_critic(state, action).mean()
-            l1 = q_loss
-            l2 = q_loss2
-            l3 = torch.norm(-l2 + delta_q + l1, p=2)**2
-            l4 = -delta_q
+            delta_q = self.delta_critic(state, action)
+            l3 = (torch.norm((-q_loss2 + delta_q + q_loss).mean(), p=2)**2)
+            l1 = q_loss.mean()
+            l2 = q_loss2.mean()
+            l4 = -delta_q.mean()
 
             a1, a2, a3, a4 = 1, 1, 1, 1
 
@@ -268,11 +270,16 @@ class Diffusion_QL(object):
 
             # metric['actor_loss'].append(actor_loss.item())
             # metric['bc_loss'].append(bc_loss.item())
-            metric['ql_loss'].append(q_loss.item())
+            metric['ql_loss'].append(q_loss.mean().item())
             metric['critic_loss'].append(critic_loss.item())
             if self.dual_diffusion:
                 # metric['bc_loss2'].append(bc_loss2.item()) 
-                metric['min_loss'].append(total_loss.item())
+                metric['min_loss'].append(min_loss.item())
+                metric['total_loss'].append(total_loss.item())
+                metric['l1'].append(l1.item())
+                metric['l2'].append(l2.item())
+                metric['l3'].append(l3.item())
+                metric['l4'].append(l4.item())
 
         if self.lr_decay: 
             self.actor_lr_scheduler.step()

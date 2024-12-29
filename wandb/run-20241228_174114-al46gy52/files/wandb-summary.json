@@ -1,0 +1,1 @@
+{"_timestamp":1.7354295388117545e+09,"_runtime":264.202346798,"_step":3,"Critic Loss":63.183194436836246,"Average Episodic Reward":-1.4414216524489418,"_wandb":{"runtime":303},"QL Loss":-0.9999943574488163,"Average Episodic N-Reward":-0.0006688411471437772,"Min Loss":0.04863305650297552}
