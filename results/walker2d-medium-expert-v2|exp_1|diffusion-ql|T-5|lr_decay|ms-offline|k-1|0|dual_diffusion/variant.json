@@ -10,7 +10,7 @@
   "dual_diffusion": true,
   "early_stop": false,
   "env_name": "walker2d-medium-expert-v2",
-  "eta": 2.0,
+  "eta": 0.2,
   "eval_episodes": 10,
   "eval_freq": 10,
   "exp": "exp_1",
