@@ -172,27 +172,35 @@ class Diffusion_QL(object):
             # bc_loss = torch.mean(bc_loss_tensor)
 
             if self.dual_diffusion: # calculating the raw loss for the second actor and finding the minimum loss
-                q1, q2 = self.critic(state, action)
-                q_vals = (q1 + q2) / 2
-                q_vals = q_vals.flatten().detach()
-                top_q_values, top_indices = torch.topk(q_vals, 128)
-                bottom_q_values, bottom_indices = torch.topk(q_vals, 128, largest=False)
-                bc_loss_tensor = self.actor.loss(action[top_indices], state[top_indices])
-                bc_loss2_tensor = self.actor2.loss(action[bottom_indices], state[bottom_indices]) 
+                
+                bc_loss_tensor = self.actor.loss(action, state)
+                bc_loss2_tensor = self.actor2.loss(action, state)
+                with torch.no_grad():
+                    q1, q2 = self.critic(state, action)
+                    q_vals = (q1 + q2) / 2
+                    q_vals = q_vals.flatten().detach()
+                    deviation_factor = 10
+                    norm_q = (q_vals / q_vals.mean())**deviation_factor
+                    top_q_values, top_indices = torch.topk(norm_q, 128)
+                    bottom_q_values, bottom_indices = torch.topk(norm_q, 128, largest=False)
+                    bc_loss_tensor[bottom_indices] /= bottom_q_values # I chose 10 as some arbitrary number to increase this by
+                    bc_loss2_tensor[top_indices] *= top_q_values 
+                min_loss = torch.minimum(bc_loss_tensor, bc_loss2_tensor)
+                min_loss_m = min_loss.mean()
                 #norm_q = (target_q - target_q.min()) / (target_q.max() - target_q.min())
                 # eta = torch.randint(0, 2, (batch_size,), device=self.device)
                 # min_loss = torch.mean(eta * bc_loss_tensor + (1 - eta) * bc_loss2_tensor)
                 #min_loss = torch.mean(temp * -torch.logsumexp(-torch.stack([bc_loss_tensor, bc_loss2_tensor]) / temp, dim=0))
-                bc_loss = (bc_loss_tensor).mean()
-                bc_loss2 = (bc_loss2_tensor).mean()
-            new_action = self.actor(state)
+                # bc_loss = (bc_loss_tensor).mean()
+                # bc_loss2 = (bc_loss2_tensor).mean()
+            # new_action = self.actor(state)
 
-            q1_new_action, q2_new_action = self.critic(state, new_action)
-            if np.random.uniform() > 0.5:
-                q_loss = - q1_new_action.mean() / q2_new_action.abs().mean().detach()
-            else:
-                q_loss = - q2_new_action.mean() / q1_new_action.abs().mean().detach()
-            actor_loss = bc_loss
+            # q1_new_action, q2_new_action = self.critic(state, new_action)
+            # if np.random.uniform() > 0.5:
+            #     q_loss = - q1_new_action.mean() / q2_new_action.abs().mean().detach()
+            # else:
+            #     q_loss = - q2_new_action.mean() / q1_new_action.abs().mean().detach()
+            actor_loss = min_loss_m
 
             # new_action2 = self.actor2(state)
             # q1_new_action2, q2_new_action2 = self.critic(state, new_action2)
@@ -203,15 +211,17 @@ class Diffusion_QL(object):
             # actor2_loss = bc_loss2 - self.eta * q_loss2 
 
             self.actor_optimizer.zero_grad()
+            self.actor2_optimizer.zero_grad()
             if self.grad_norm > 0: 
                 actor_grad_norms = nn.utils.clip_grad_norm_(self.actor.parameters(), max_norm=self.grad_norm, norm_type=2)
             actor_loss.backward(retain_graph=True)
             self.actor_optimizer.step()
+            self.actor2_optimizer.step()
     
-            if self.dual_diffusion:
-                self.actor2_optimizer.zero_grad()
-                bc_loss2.backward()
-                self.actor2_optimizer.step()
+            # if self.dual_diffusion:
+                # self.actor2_optimizer.zero_grad()
+                # #bc_loss2.backward()
+                # self.actor2_optimizer.step()
 
 
             """ Step Target network """
@@ -234,11 +244,11 @@ class Diffusion_QL(object):
                 log_writer.add_scalar('Target_Q Mean', target_q.mean().item(), self.step)
 
             #metric['actor_loss'].append(actor_loss.item())
-            metric['bc_loss'].append(bc_loss.item())
+            #metric['bc_loss'].append(bc_loss.item())
             #metric['ql_loss'].append(q_loss.item())
             metric['critic_loss'].append(critic_loss.item())
-            if self.dual_diffusion:
-                metric['bc_loss2'].append(bc_loss2.item()) 
+            # if self.dual_diffusion:
+                #metric['bc_loss2'].append(bc_loss2.item()) 
                 # metric['min_loss'].append(min_loss.item())
 
         if self.lr_decay: 
