@@ -192,7 +192,7 @@ class Diffusion_QL(object):
                 q_loss = - q1_new_action.mean() / q2_new_action.abs().mean().detach()
             else:
                 q_loss = - q2_new_action.mean() / q1_new_action.abs().mean().detach()
-            actor_loss = bc_loss
+            actor_loss = bc_loss + 0.00001 * q_loss
 
             # new_action2 = self.actor2(state)
             # q1_new_action2, q2_new_action2 = self.critic(state, new_action2)
