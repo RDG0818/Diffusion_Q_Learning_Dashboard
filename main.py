@@ -22,14 +22,15 @@ from torch.utils.tensorboard import SummaryWriter
 hyperparameters = {
     'halfcheetah-medium-v2':         {'lr': 3e-4, 'eta': 1.0,   'max_q_backup': False,  'reward_tune': 'no',          'eval_freq': 50, 'num_epochs': 2000, 'gn': 9.0,  'top_k': 1},
     'hopper-medium-v2':              {'lr': 3e-4, 'eta': 1.0,   'max_q_backup': False,  'reward_tune': 'no',          'eval_freq': 50, 'num_epochs': 2000, 'gn': 9.0,  'top_k': 2},
-    'walker2d-medium-v2':            {'lr': 3e-4, 'eta': 1.0,   'max_q_backup': False,  'reward_tune': 'no',          'eval_freq': 50, 'num_epochs': 100, 'gn': 1.0,  'top_k': 1},
+    'walker2d-medium-v2':            {'lr': 3e-4, 'eta': 1.0,   'max_q_backup': False,  'reward_tune': 'no',          'eval_freq': 50, 'num_epochs': 1000, 'gn': 1.0,  'top_k': 1},
     'halfcheetah-medium-replay-v2':  {'lr': 3e-4, 'eta': 1.0,   'max_q_backup': False,  'reward_tune': 'no',          'eval_freq': 50, 'num_epochs': 2000, 'gn': 2.0,  'top_k': 0},
     'hopper-medium-replay-v2':       {'lr': 3e-4, 'eta': 1.0,   'max_q_backup': False,  'reward_tune': 'no',          'eval_freq': 50, 'num_epochs': 2000, 'gn': 4.0,  'top_k': 2},
     'walker2d-medium-replay-v2':     {'lr': 3e-4, 'eta': 1.0,   'max_q_backup': False,  'reward_tune': 'no',          'eval_freq': 50, 'num_epochs': 2000, 'gn': 4.0,  'top_k': 1},
     'halfcheetah-medium-expert-v2':  {'lr': 3e-4, 'eta': 1.0,   'max_q_backup': False,  'reward_tune': 'no',          'eval_freq': 50, 'num_epochs': 2000, 'gn': 7.0,  'top_k': 0},
     'hopper-medium-expert-v2':       {'lr': 3e-4, 'eta': 1.0,   'max_q_backup': False,  'reward_tune': 'no',          'eval_freq': 50, 'num_epochs': 2000, 'gn': 5.0,  'top_k': 2},
-    'walker2d-medium-expert-v2':     {'lr': 3e-4, 'eta': 0.2,   'max_q_backup': False,  'reward_tune': 'no',          'eval_freq': 10, 'num_epochs': 4000, 'gn': 5.0,  'top_k': 1},
-    'walker2d-expert-v2':            {'lr': 3e-4, 'eta': 1.0,   'max_q_backup': False,  'reward_tune': 'no',          'eval_freq': 50, 'num_epochs': 100, 'gn': 5.0,  'top_k': 1},
+    'hopper-expert-v2':              {'lr': 3e-4, 'eta': 1.0,   'max_q_backup': False,  'reward_tune': 'no',          'eval_freq': 50, 'num_epochs': 2000, 'gn': 5.0,  'top_k': 2},
+    'walker2d-medium-expert-v2':     {'lr': 3e-4, 'eta': 1.0,   'max_q_backup': False,  'reward_tune': 'no',          'eval_freq': 10, 'num_epochs': 4000, 'gn': 5.0,  'top_k': 1},
+    'walker2d-expert-v2':            {'lr': 3e-4, 'eta': 1.0,   'max_q_backup': False,  'reward_tune': 'no',          'eval_freq': 50, 'num_epochs': 1000, 'gn': 5.0,  'top_k': 1},
     'antmaze-umaze-v0':              {'lr': 3e-4, 'eta': 0.5,   'max_q_backup': False,  'reward_tune': 'cql_antmaze', 'eval_freq': 50, 'num_epochs': 1000, 'gn': 2.0,  'top_k': 2},
     'antmaze-umaze-diverse-v0':      {'lr': 3e-4, 'eta': 2.0,   'max_q_backup': True,   'reward_tune': 'cql_antmaze', 'eval_freq': 50, 'num_epochs': 1000, 'gn': 3.0,  'top_k': 2},
     'antmaze-medium-play-v0':        {'lr': 1e-3, 'eta': 2.0,   'max_q_backup': True,   'reward_tune': 'cql_antmaze', 'eval_freq': 50, 'num_epochs': 1000, 'gn': 2.0,  'top_k': 1},
@@ -45,7 +46,7 @@ hyperparameters = {
 
 def train_agent(env, state_dim, action_dim, max_action, device, output_dir, args):
     # Load buffer
-    dataset = mix_datasets('walker2d-medium-v2', 'walker2d-expert-v2')
+    dataset = mix_datasets('hopper-medium-v2', 'hopper-expert-v2')
     #dataset = d4rl.qlearning_dataset(env)
     data_sampler = Data_Sampler(dataset, device, args.reward_tune, True)
     utils.print_banner('Loaded buffer')
@@ -101,69 +102,28 @@ def train_agent(env, state_dim, action_dim, max_action, device, output_dir, args
         # Logging
         #TODO: Remove other logging system
         utils.print_banner(f"Train step: {training_iters}", separator="*", num_star=90)
-        logger.record_tabular('Trained Epochs', curr_epoch)
-        logger.record_tabular('BC Loss', np.mean(loss_metric['bc_loss']))
-        logger.record_tabular('QL Loss', np.mean(loss_metric['ql_loss']))
-        logger.record_tabular('Actor Loss', np.mean(loss_metric['actor_loss']))
-        logger.record_tabular('Critic Loss', np.mean(loss_metric['critic_loss']))
-        wandb.log({'BC Loss': np.mean(loss_metric['bc_loss']),
-                   'BC Loss 2': np.sum(loss_metric['bc_loss2']),
-                   'Min Loss': np.mean(loss_metric['min_loss']),
-                   'QL Loss': np.mean(loss_metric['ql_loss']), 
-                   'Actor Loss': np.mean(loss_metric['actor_loss']),
-                   'Critic Loss': np.mean(loss_metric['critic_loss'])})
-        logger.dump_tabular()
+        print('Actor Loss:', np.mean(loss_metric['actor_loss']))
+        print('Critic Loss:', np.mean(loss_metric['critic_loss']))
 
         # Evaluation
         eval_res, eval_res_std, eval_norm_res, eval_norm_res_std = eval_policy(agent, args.env_name, args.seed,
                                                                                eval_episodes=args.eval_episodes)
-        evaluations.append([eval_res, eval_res_std, eval_norm_res, eval_norm_res_std,
-                            np.mean(loss_metric['bc_loss']), np.mean(loss_metric['ql_loss']),
-                            np.mean(loss_metric['actor_loss']), np.mean(loss_metric['critic_loss']),
-                            curr_epoch])
-        np.save(os.path.join(output_dir, "eval"), evaluations)
-        #TODO: Add this other stuff to wandb and remove logger stuff
-        logger.record_tabular('Average Episodic Reward', eval_res)
-        logger.record_tabular('Average Episodic N-Reward', eval_norm_res)
-        wandb.log({'Average Episodic Reward': eval_res, 
-                   'Average Episodic N-Reward': eval_norm_res})
-        logger.dump_tabular()
+        
         
         # # Checking dual diffusions ability to differentiate sources 
-        eval_classifier(agent, data_sampler, batch_size=256)
+        eval_classifier(agent, data_sampler, batch_size=args.batch_size)
 
-        bc_loss = np.mean(loss_metric['bc_loss'])
-        if args.early_stop:
-            early_stop = stop_check(metric, bc_loss)
+        #bc_loss = np.mean(loss_metric['bc_loss'])
+        # if args.early_stop:
+        #     early_stop = stop_check(metric, bc_loss)
 
-        metric = bc_loss
+        # metric = bc_loss
 
         if args.save_best_model:
             agent.save_model(output_dir, curr_epoch)
 
     # Model Selection: online or offline
-    scores = np.array(evaluations)
-    if args.ms == 'online':
-        best_id = np.argmax(scores[:, 2])
-        best_res = {'model selection': args.ms, 'epoch': scores[best_id, -1],
-                    'best normalized score avg': scores[best_id, 2],
-                    'best normalized score std': scores[best_id, 3],
-                    'best raw score avg': scores[best_id, 0],
-                    'best raw score std': scores[best_id, 1]}
-        with open(os.path.join(output_dir, f"best_score_{args.ms}.txt"), 'w') as f:
-            f.write(json.dumps(best_res))
-    elif args.ms == 'offline':
-        bc_loss = scores[:, 4]
-        top_k = min(len(bc_loss) - 1, args.top_k)
-        where_k = np.argsort(bc_loss) == top_k
-        best_res = {'model selection': args.ms, 'epoch': scores[where_k][0][-1],
-                    'best normalized score avg': scores[where_k][0][2],
-                    'best normalized score std': scores[where_k][0][3],
-                    'best raw score avg': scores[where_k][0][0],
-                    'best raw score std': scores[where_k][0][1]}
-
-        with open(os.path.join(output_dir, f"best_score_{args.ms}.txt"), 'w') as f:
-            f.write(json.dumps(best_res))
+    
 
     # writer.close()
 
@@ -177,8 +137,8 @@ def eval_classifier(policy, data_sampler, batch_size):
     action = action.to('cpu')
     source = source.to('cpu')
     for a, s in zip(action, state):
-        actor_action = policy.sample_action_tensor(s)
-        actor2_action = policy.sample_action_tensor2(s)
+        actor_action = policy.sample_action_tensor(s).squeeze(0)
+        actor2_action = policy.sample_action_tensor2(s).squeeze(0)
         if torch.nn.functional.mse_loss(actor_action, a) < torch.nn.functional.mse_loss(actor2_action, a):
             estimate.append(1)
         else:
@@ -224,7 +184,7 @@ if __name__ == "__main__":
     parser.add_argument("--num_steps_per_epoch", default=1000, type=int)
 
     ### Optimization Setups ###
-    parser.add_argument("--batch_size", default=256, type=int)
+    parser.add_argument("--batch_size", default=512, type=int)
     parser.add_argument("--lr_decay", action='store_true')
     parser.add_argument('--early_stop', action='store_true')
     parser.add_argument('--save_best_model', action='store_true')
@@ -273,10 +233,10 @@ if __name__ == "__main__":
 
     if args.dual_diffusion: file_name += '|dual_diffusion'
 
-    #TODO: Setup configs for this
-    wandb.init(
-    project=file_name
-    )
+    # #TODO: Setup configs for this
+    # wandb.init(
+    # project=file_name
+    # )
 
     results_dir = os.path.join(args.output_dir, file_name)
     if not os.path.exists(results_dir):

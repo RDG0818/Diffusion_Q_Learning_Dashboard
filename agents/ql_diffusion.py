@@ -97,7 +97,7 @@ class Diffusion_QL(object):
 
         self.critic = Critic(state_dim, action_dim).to(device)
         self.critic_target = copy.deepcopy(self.critic)
-        self.critic_optimizer = torch.optim.Adam(self.critic.parameters(), lr=3e-4)
+        self.critic_optimizer = torch.optim.Adam(self.critic.parameters(), lr=lr)
 
         if lr_decay: # Added second actor to lr scheduler
             self.actor_lr_scheduler = CosineAnnealingLR(self.actor_optimizer, T_max=lr_maxt, eta_min=0.)
@@ -176,45 +176,27 @@ class Diffusion_QL(object):
                 bc_loss_tensor = self.actor.loss(action, state)
                 bc_loss2_tensor = self.actor2.loss(action, state)
                 with torch.no_grad():
-                    q1, q2 = self.critic(state, action)
-                    q_vals = (q1 + q2) / 2
-                    q_vals = q_vals.flatten().detach()
-                    deviation_factor = 10
-                    norm_q = (q_vals / q_vals.mean())**deviation_factor
-                    top_q_values, top_indices = torch.topk(norm_q, 128)
-                    bottom_q_values, bottom_indices = torch.topk(norm_q, 128, largest=False)
-                    bc_loss_tensor[bottom_indices] /= bottom_q_values # I chose 10 as some arbitrary number to increase this by
-                    bc_loss2_tensor[top_indices] *= top_q_values 
+                    q1, q2 = self.critic(state, action)  # Get q1 and q2 from the tuple
+                    q_vals = ((q1 + q2) / 2).flatten() # Calculate mean and flatten
+
+                    deviation_factor = 2
+
+                    top_q, top_indices = torch.topk(q_vals, batch_size//2)
+                    bottom_q, bottom_indices = torch.topk(q_vals, batch_size//2, largest=False)
+
+                    norm_top_q = (top_q - top_q.min()) / ((top_q.max() - top_q.min()) * (deviation_factor))
+                    norm_bottom_q = (bottom_q - bottom_q.min()) / ((bottom_q.max() - bottom_q.min()) * (deviation_factor))
+
+                    bc_loss_tensor[bottom_indices] /= norm_bottom_q #penalizing low q value actions
+                    bc_loss2_tensor[top_indices] /= norm_top_q #penalizing high q value actions
                 min_loss = torch.minimum(bc_loss_tensor, bc_loss2_tensor)
-                min_loss_m = min_loss.mean()
-                #norm_q = (target_q - target_q.min()) / (target_q.max() - target_q.min())
-                # eta = torch.randint(0, 2, (batch_size,), device=self.device)
-                # min_loss = torch.mean(eta * bc_loss_tensor + (1 - eta) * bc_loss2_tensor)
-                #min_loss = torch.mean(temp * -torch.logsumexp(-torch.stack([bc_loss_tensor, bc_loss2_tensor]) / temp, dim=0))
-                # bc_loss = (bc_loss_tensor).mean()
-                # bc_loss2 = (bc_loss2_tensor).mean()
-            # new_action = self.actor(state)
-
-            # q1_new_action, q2_new_action = self.critic(state, new_action)
-            # if np.random.uniform() > 0.5:
-            #     q_loss = - q1_new_action.mean() / q2_new_action.abs().mean().detach()
-            # else:
-            #     q_loss = - q2_new_action.mean() / q1_new_action.abs().mean().detach()
-            actor_loss = min_loss_m
-
-            # new_action2 = self.actor2(state)
-            # q1_new_action2, q2_new_action2 = self.critic(state, new_action2)
-            # if np.random.uniform() > 0.5:
-            #     q_loss2 = - q1_new_action2.mean() / q2_new_action2.abs().mean().detach()
-            # else:
-            #     q_loss2 = - q2_new_action2.mean() / q1_new_action2.abs().mean().detach()
-            # actor2_loss = bc_loss2 - self.eta * q_loss2 
-
+                actor_loss = min_loss.mean()
+                
             self.actor_optimizer.zero_grad()
             self.actor2_optimizer.zero_grad()
             if self.grad_norm > 0: 
                 actor_grad_norms = nn.utils.clip_grad_norm_(self.actor.parameters(), max_norm=self.grad_norm, norm_type=2)
-            actor_loss.backward(retain_graph=True)
+            actor_loss.backward()
             self.actor_optimizer.step()
             self.actor2_optimizer.step()
     
@@ -243,7 +225,7 @@ class Diffusion_QL(object):
                 log_writer.add_scalar('Critic Loss', critic_loss.item(), self.step)
                 log_writer.add_scalar('Target_Q Mean', target_q.mean().item(), self.step)
 
-            #metric['actor_loss'].append(actor_loss.item())
+            metric['actor_loss'].append(actor_loss.item())
             #metric['bc_loss'].append(bc_loss.item())
             #metric['ql_loss'].append(q_loss.item())
             metric['critic_loss'].append(critic_loss.item())
@@ -278,7 +260,7 @@ class Diffusion_QL(object):
         with torch.no_grad():
             action = self.actor.sample(state_rpt)
             q_value = self.critic_target.q_min(state_rpt, action).flatten()
-            idx = torch.multinomial(F.softmax(q_value), 1)
+            idx = torch.multinomial(F.softmax(q_value, dim=-1), 1)
         return action[idx].cpu()
 
     def sample_action_tensor2(self, state):
@@ -287,7 +269,7 @@ class Diffusion_QL(object):
         with torch.no_grad():
             action = self.actor2.sample(state_rpt)
             q_value = self.critic_target.q_min(state_rpt, action).flatten()
-            idx = torch.multinomial(F.softmax(q_value), 1)
+            idx = torch.multinomial(F.softmin(q_value, dim=-1), 1)
         return action[idx].cpu()
     
     def ground_truth_check(self, replay_buffer, batch_size):
