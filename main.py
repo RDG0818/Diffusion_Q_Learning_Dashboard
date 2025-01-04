@@ -2,16 +2,11 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import argparse
-import tabulate
 import gym
 import numpy as np
 import os
-import sklearn.metrics
 import torch
 import json
-import wandb
-import sklearn
-from mixed_dataset import mix_datasets
 
 import d4rl
 from utils import utils
@@ -22,14 +17,14 @@ from torch.utils.tensorboard import SummaryWriter
 hyperparameters = {
     'halfcheetah-medium-v2':         {'lr': 3e-4, 'eta': 1.0,   'max_q_backup': False,  'reward_tune': 'no',          'eval_freq': 50, 'num_epochs': 2000, 'gn': 9.0,  'top_k': 1},
     'hopper-medium-v2':              {'lr': 3e-4, 'eta': 1.0,   'max_q_backup': False,  'reward_tune': 'no',          'eval_freq': 50, 'num_epochs': 2000, 'gn': 9.0,  'top_k': 2},
-    'walker2d-medium-v2':            {'lr': 3e-4, 'eta': 1.0,   'max_q_backup': False,  'reward_tune': 'no',          'eval_freq': 50, 'num_epochs': 100, 'gn': 1.0,  'top_k': 1},
+    'walker2d-medium-v2':            {'lr': 3e-4, 'eta': 1.0,   'max_q_backup': False,  'reward_tune': 'no',          'eval_freq': 50, 'num_epochs': 2000, 'gn': 1.0,  'top_k': 1},
     'halfcheetah-medium-replay-v2':  {'lr': 3e-4, 'eta': 1.0,   'max_q_backup': False,  'reward_tune': 'no',          'eval_freq': 50, 'num_epochs': 2000, 'gn': 2.0,  'top_k': 0},
     'hopper-medium-replay-v2':       {'lr': 3e-4, 'eta': 1.0,   'max_q_backup': False,  'reward_tune': 'no',          'eval_freq': 50, 'num_epochs': 2000, 'gn': 4.0,  'top_k': 2},
     'walker2d-medium-replay-v2':     {'lr': 3e-4, 'eta': 1.0,   'max_q_backup': False,  'reward_tune': 'no',          'eval_freq': 50, 'num_epochs': 2000, 'gn': 4.0,  'top_k': 1},
     'halfcheetah-medium-expert-v2':  {'lr': 3e-4, 'eta': 1.0,   'max_q_backup': False,  'reward_tune': 'no',          'eval_freq': 50, 'num_epochs': 2000, 'gn': 7.0,  'top_k': 0},
-    'hopper-medium-expert-v2':       {'lr': 3e-4, 'eta': 1.0,   'max_q_backup': False,  'reward_tune': 'no',          'eval_freq': 10, 'num_epochs': 2000, 'gn': 5.0,  'top_k': 2},
-    'walker2d-medium-expert-v2':     {'lr': 3e-4, 'eta': 0.2,   'max_q_backup': False,  'reward_tune': 'no',          'eval_freq': 10, 'num_epochs': 4000, 'gn': 5.0,  'top_k': 1},
-    'walker2d-expert-v2':            {'lr': 3e-4, 'eta': 1.0,   'max_q_backup': False,  'reward_tune': 'no',          'eval_freq': 50, 'num_epochs': 100, 'gn': 5.0,  'top_k': 1},
+    'hopper-medium-expert-v2':       {'lr': 3e-4, 'eta': 1.0,   'max_q_backup': False,  'reward_tune': 'no',          'eval_freq': 50, 'num_epochs': 2000, 'gn': 5.0,  'top_k': 2},
+    'walker2d-medium-expert-v2':     {'lr': 3e-4, 'eta': 1.0,   'max_q_backup': False,  'reward_tune': 'no',          'eval_freq': 10, 'num_epochs': 2000, 'gn': 5.0,  'top_k': 1},
+    'walker2d-expert-v2':            {'lr': 3e-4, 'eta': 1.0,   'max_q_backup': False,  'reward_tune': 'no',          'eval_freq': 50, 'num_epochs': 2000, 'gn': 5.0,  'top_k': 1},
     'antmaze-umaze-v0':              {'lr': 3e-4, 'eta': 0.5,   'max_q_backup': False,  'reward_tune': 'cql_antmaze', 'eval_freq': 50, 'num_epochs': 1000, 'gn': 2.0,  'top_k': 2},
     'antmaze-umaze-diverse-v0':      {'lr': 3e-4, 'eta': 2.0,   'max_q_backup': True,   'reward_tune': 'cql_antmaze', 'eval_freq': 50, 'num_epochs': 1000, 'gn': 3.0,  'top_k': 2},
     'antmaze-medium-play-v0':        {'lr': 1e-3, 'eta': 2.0,   'max_q_backup': True,   'reward_tune': 'cql_antmaze', 'eval_freq': 50, 'num_epochs': 1000, 'gn': 2.0,  'top_k': 1},
@@ -45,8 +40,9 @@ hyperparameters = {
 
 def train_agent(env, state_dim, action_dim, max_action, device, output_dir, args):
     # Load buffer
-    dataset = mix_datasets('hopper-medium-v2', 'hopper-expert-v2')
     #dataset = d4rl.qlearning_dataset(env)
+    import mixed_dataset
+    dataset = mixed_dataset.mix_datasets('walker2d-medium-v2', 'walker2d-expert-v2')
     data_sampler = Data_Sampler(dataset, device, args.reward_tune, True)
     utils.print_banner('Loaded buffer')
 
@@ -65,9 +61,7 @@ def train_agent(env, state_dim, action_dim, max_action, device, output_dir, args
                       lr=args.lr,
                       lr_decay=args.lr_decay,
                       lr_maxt=args.num_epochs,
-                      grad_norm=args.gn,
-                      dual_diffusion=args.dual_diffusion
-                      )
+                      grad_norm=args.gn)
     elif args.algo == 'bc':
         from agents.bc_diffusion import Diffusion_BC as Agent
         agent = Agent(state_dim=state_dim,
@@ -99,19 +93,12 @@ def train_agent(env, state_dim, action_dim, max_action, device, output_dir, args
         curr_epoch = int(training_iters // int(args.num_steps_per_epoch))
 
         # Logging
-        #TODO: Remove other logging system
         utils.print_banner(f"Train step: {training_iters}", separator="*", num_star=90)
         logger.record_tabular('Trained Epochs', curr_epoch)
         logger.record_tabular('BC Loss', np.mean(loss_metric['bc_loss']))
         logger.record_tabular('QL Loss', np.mean(loss_metric['ql_loss']))
         logger.record_tabular('Actor Loss', np.mean(loss_metric['actor_loss']))
         logger.record_tabular('Critic Loss', np.mean(loss_metric['critic_loss']))
-        wandb.log({'BC Loss': np.mean(loss_metric['bc_loss']),
-                   'BC Loss 2': np.sum(loss_metric['bc_loss2']),
-                   'Min Loss': np.mean(loss_metric['min_loss']),
-                   'QL Loss': np.mean(loss_metric['ql_loss']), 
-                   'Actor Loss': np.mean(loss_metric['actor_loss']),
-                   'Critic Loss': np.mean(loss_metric['critic_loss'])})
         logger.dump_tabular()
 
         # Evaluation
@@ -122,15 +109,9 @@ def train_agent(env, state_dim, action_dim, max_action, device, output_dir, args
                             np.mean(loss_metric['actor_loss']), np.mean(loss_metric['critic_loss']),
                             curr_epoch])
         np.save(os.path.join(output_dir, "eval"), evaluations)
-        #TODO: Add this other stuff to wandb and remove logger stuff
         logger.record_tabular('Average Episodic Reward', eval_res)
         logger.record_tabular('Average Episodic N-Reward', eval_norm_res)
-        wandb.log({'Average Episodic Reward': eval_res, 
-                   'Average Episodic N-Reward': eval_norm_res})
         logger.dump_tabular()
-        
-        # # Checking dual diffusions ability to differentiate sources 
-        eval_classifier(agent, data_sampler, batch_size=256)
 
         bc_loss = np.mean(loss_metric['bc_loss'])
         if args.early_stop:
@@ -170,24 +151,6 @@ def train_agent(env, state_dim, action_dim, max_action, device, output_dir, args
 
 # Runs policy for X episodes and returns average reward
 # A fixed seed is used for the eval environment
-def eval_classifier(policy, data_sampler, batch_size):
-    state, action, _, _, _, source = policy.get_sample_from_buffer(data_sampler, batch_size)
-    estimate = []
-    state = state.to('cpu')
-    action = action.to('cpu')
-    source = source.to('cpu')
-    for a, s in zip(action, state):
-        actor_action = policy.sample_action_tensor(s)
-        actor2_action = policy.sample_action_tensor2(s)
-        if torch.nn.functional.mse_loss(actor_action, a) < torch.nn.functional.mse_loss(actor2_action, a):
-            estimate.append(1)
-        else:
-            estimate.append(0)
-    cm = sklearn.metrics.confusion_matrix(source, estimate)
-    print("Confusion Matrix:")
-    print(cm)
-
-
 def eval_policy(policy, env_name, seed, eval_episodes=10):
     eval_env = gym.make(env_name)
     eval_env.seed(seed + 100)
@@ -239,11 +202,10 @@ if __name__ == "__main__":
     ### Algo Choice ###
     parser.add_argument("--algo", default="ql", type=str)  # ['bc', 'ql']
     parser.add_argument("--ms", default='offline', type=str, help="['online', 'offline']")
-    parser.add_argument("--dual_diffusion", default=False, type=bool)
     # parser.add_argument("--top_k", default=1, type=int)
 
     # parser.add_argument("--lr", default=3e-4, type=float)
-    parser.add_argument("--eta", default=2.0, type=float)
+    # parser.add_argument("--eta", default=1.0, type=float)
     # parser.add_argument("--max_q_backup", action='store_true')
     # parser.add_argument("--reward_tune", default='no', type=str)
     # parser.add_argument("--gn", default=-1.0, type=float)
@@ -271,13 +233,6 @@ if __name__ == "__main__":
     if args.ms == 'offline': file_name += f'|k-{args.top_k}'
     file_name += f'|{args.seed}'
 
-    if args.dual_diffusion: file_name += '|dual_diffusion'
-
-    #TODO: Setup configs for this
-    wandb.init(
-    project=file_name
-    )
-
     results_dir = os.path.join(args.output_dir, file_name)
     if not os.path.exists(results_dir):
         os.makedirs(results_dir)
@@ -301,7 +256,7 @@ if __name__ == "__main__":
     variant.update(action_dim=action_dim)
     variant.update(max_action=max_action)
     setup_logger(os.path.basename(results_dir), variant=variant, log_dir=results_dir)
-    utils.print_banner(f"Env: {args.env_name}, state_dim: {state_dim}, action_dim: {action_dim}, dual_diffusion: {args.dual_diffusion}")
+    utils.print_banner(f"Env: {args.env_name}, state_dim: {state_dim}, action_dim: {action_dim}")
 
     train_agent(env,
                 state_dim,
