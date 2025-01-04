@@ -131,6 +131,9 @@ class Diffusion_QL(object):
 
             """ Q Training """
             current_q1, current_q2 = self.critic(state, action)
+            q_vals = ((current_q1 + current_q2) / 2).flatten()
+            top_q_values, top_indices = torch.topk(q_vals, batch_size//2)
+            bottom_q_values, bottom_indices = torch.topk(q_vals, batch_size//2, largest=False)
             #TODO: Make next_action be half from actor 1 and half from actor 2
             if self.max_q_backup:
                 next_state_rpt = torch.repeat_interleave(next_state, repeats=10, dim=0)
@@ -153,13 +156,13 @@ class Diffusion_QL(object):
                 # next_state_second_half = next_state[half:]
                 # next_action = torch.cat((self.ema_model(next_state_first_half), self.ema_model2(next_state_second_half)), dim=0)
 
-                next_action = self.ema_model(next_state)
-                target_q1, target_q2 = self.critic_target(next_state, next_action)
+                next_action = self.ema_model(next_state[top_indices])
+                target_q1, target_q2 = self.critic_target(next_state[top_indices], next_action)
                 target_q = torch.min(target_q1, target_q2)
 
-            target_q = (reward + not_done * self.discount * target_q).detach()
+            target_q = (reward[top_indices] + not_done[top_indices] * self.discount * target_q).detach()
 
-            critic_loss = F.mse_loss(current_q1, target_q) + F.mse_loss(current_q2, target_q)
+            critic_loss = F.mse_loss(current_q1[top_indices], target_q) + F.mse_loss(current_q2[top_indices], target_q)
 
             self.critic_optimizer.zero_grad()
             critic_loss.backward()
@@ -172,11 +175,7 @@ class Diffusion_QL(object):
             # bc_loss = torch.mean(bc_loss_tensor)
 
             if self.dual_diffusion: # calculating the raw loss for the second actor and finding the minimum loss
-                q1, q2 = self.critic(state, action)
-                q_vals = (q1 + q2) / 2
-                q_vals = q_vals.flatten().detach()
-                top_q_values, top_indices = torch.topk(q_vals, 128)
-                bottom_q_values, bottom_indices = torch.topk(q_vals, 128, largest=False)
+
                 bc_loss_tensor = self.actor.loss(action[top_indices], state[top_indices])
                 bc_loss2_tensor = self.actor2.loss(action[bottom_indices], state[bottom_indices]) 
                 #norm_q = (target_q - target_q.min()) / (target_q.max() - target_q.min())
@@ -185,14 +184,14 @@ class Diffusion_QL(object):
                 #min_loss = torch.mean(temp * -torch.logsumexp(-torch.stack([bc_loss_tensor, bc_loss2_tensor]) / temp, dim=0))
                 bc_loss = (bc_loss_tensor).mean()
                 bc_loss2 = (bc_loss2_tensor).mean()
-            new_action = self.actor(state)
+            new_action = self.actor(state[top_indices])
 
-            q1_new_action, q2_new_action = self.critic(state, new_action)
+            q1_new_action, q2_new_action = self.critic(state[top_indices], new_action)
             if np.random.uniform() > 0.5:
                 q_loss = - q1_new_action.mean() / q2_new_action.abs().mean().detach()
             else:
                 q_loss = - q2_new_action.mean() / q1_new_action.abs().mean().detach()
-            actor_loss = bc_loss + 0.00001 * q_loss
+            actor_loss = bc_loss + 0 * q_loss
 
             # new_action2 = self.actor2(state)
             # q1_new_action2, q2_new_action2 = self.critic(state, new_action2)
