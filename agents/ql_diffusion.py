@@ -197,46 +197,45 @@ class Diffusion_QL(object):
                 # temp = 0.0001 * (self.step + 1) #increasing temperature
                 # if temp >10:
                 #     temp = 10
-                
-                # q1, q2 = self.critic(state, action)
-                # q_vals = (q1 + q2) / 2
-                # q_vals = q_vals.detach()
-                # q_mean = q_vals.mean().detach()
-                # expert_action = torch.where(q_vals > q_mean, action, torch.tensor(0))
-                # medium_action = torch.where(q_vals < q_mean, action, torch.tensor(0))
                 bc_loss_tensor = self.actor.loss(action, state, ts)
-                bc_loss2_tensor = self.actor2.loss(action, state, ts) 
-                temp = 0.00001 * (self.step + 1) + 0.1 #increasing temperature
-                if temp >50:
-                    temp = 50
-                min_loss = torch.mean(-torch.logsumexp(-torch.stack([bc_loss_tensor, bc_loss2_tensor]) * temp, dim=1)/temp)
+                bc_loss2_tensor = self.actor2.loss(action, state, ts)
+                with torch.no_grad():
+                    q1, q2 = self.critic(state, action)
+                    q_vals = ((q1 + q2) / 2).flatten()
+                    top_q, top_index = torch.topk(q_vals, batch_size//2)
+                    bottom_q, bottom_index = torch.topk(q_vals, batch_size//2, largest=False)
+                    bc_loss_tensor[bottom_index] *= 100
+                    bc_loss2_tensor[top_index] *= 100
+                min_loss = torch.minimum(bc_loss_tensor, bc_loss2_tensor).mean()
+                # temp = 0.00001 * (self.step + 1) + 0.1 #increasing temperature
+                # if temp >50:
+                #     temp = 50
+                # min_loss = torch.mean(-torch.logsumexp(-torch.stack([bc_loss_tensor, bc_loss2_tensor]) * temp, dim=1)/temp)
                 #min_loss = F.softmin(torch.stack([bc_loss_tensor, bc_loss2_tensor]), dim=-1).mean()
-                # bc_loss = (bc_loss_tensor).mean()
-                # bc_loss2 = (bc_loss2_tensor).mean()
             new_action = self.actor(state)
 
             q1_new_action, q2_new_action = self.critic(state, new_action)
             if np.random.uniform() > 0.5:
-                q_loss = - q1_new_action / q2_new_action.abs().detach()
+                q_loss = - q1_new_action.mean() / q2_new_action.abs().mean().detach()
             else:
-                q_loss = - q2_new_action / q1_new_action.abs().detach()
+                q_loss = - q2_new_action.mean() / q1_new_action.abs().mean().detach()
             # actor_loss = bc_loss + self.eta * q_loss
 
             new_action2 = self.actor2(state)
             q1_new_action2, q2_new_action2 = self.critic(state, new_action2)
             if np.random.uniform() > 0.5:
-                q_loss2 = - q1_new_action2 / q2_new_action2.abs().detach()
+                q_loss2 = - q1_new_action2.mean() / q2_new_action2.abs().mean().detach()
             else:
-                q_loss2 = - q2_new_action2 / q1_new_action2.abs().detach()
+                q_loss2 = - q2_new_action2.mean() / q1_new_action2.abs().mean().detach()
             # actor2_loss = bc_loss2 - self.eta * q_loss2
 
-            delta_q = self.delta_critic(state, action)
-            l3 = (torch.norm((-q_loss2 + delta_q + q_loss).mean(), p=2)**2)
-            l1 = q_loss.mean()
-            l2 = q_loss2.mean()
-            l4 = -delta_q.mean()
+            delta_q = self.delta_critic(state, action).mean()
+            l3 = (torch.norm((-q_loss2 + delta_q + q_loss), p=2)**2)
+            l1 = q_loss
+            l2 = q_loss2
+            l4 = -delta_q
 
-            a1, a2, a3, a4 = 1, 1, 1, 1
+            a1, a2, a3, a4 = 0.00, 0.00, 0.01, 0.01
 
             total_loss = min_loss + a1*l1 + a2*l2 + a3*l3 + a4*l4
 
