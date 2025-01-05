@@ -110,14 +110,15 @@ class Diffusion_QL(object):
         self.ema.update_model_average(self.ema_model, self.actor)
 
     def train(self, replay_buffer, iterations, batch_size=100, log_writer=None):
-
+        
         metric = {'bc_loss': [], 'ql_loss': [], 'actor_loss': [], 'critic_loss': []}
         for _ in range(iterations):
+            if self.step % 1000 == 0: print(f"Epoch: {self.step // 1000}")
             # Sample replay buffer / batch
             state, action, next_state, reward, not_done, source = replay_buffer.sample(batch_size)
 
             """ Q Training """
-            current_q1, current_q2 = self.critic(state[source==1], action[source==1])
+            current_q1, current_q2 = self.critic(state, action)
 
             if self.max_q_backup:
                 next_state_rpt = torch.repeat_interleave(next_state, repeats=10, dim=0)
@@ -127,11 +128,11 @@ class Diffusion_QL(object):
                 target_q2 = target_q2.view(batch_size, 10).max(dim=1, keepdim=True)[0]
                 target_q = torch.min(target_q1, target_q2)
             else:
-                next_action = self.ema_model(next_state[source==1])
-                target_q1, target_q2 = self.critic_target(next_state[source==1], next_action)
+                next_action = self.ema_model(next_state)
+                target_q1, target_q2 = self.critic_target(next_state, next_action)
                 target_q = torch.min(target_q1, target_q2)
 
-            target_q = (reward[source==1] + not_done[source==1] * self.discount * target_q).detach()
+            target_q = (reward + not_done * self.discount * target_q).detach()
 
             critic_loss = F.mse_loss(current_q1, target_q) + F.mse_loss(current_q2, target_q)
 
@@ -142,12 +143,12 @@ class Diffusion_QL(object):
             self.critic_optimizer.step()
 
             """ Policy Training """
-            bc_loss = self.actor.loss(action[source==1], state[source==1])
+            bc_loss = self.actor.loss(action, state)
             
             #bc_loss2 = self.actor2.loss(action, state)
-            new_action = self.actor(state[source==1])
+            new_action = self.actor(state)
 
-            q1_new_action, q2_new_action = self.critic(state[source==1], new_action)
+            q1_new_action, q2_new_action = self.critic(state, new_action)
             if np.random.uniform() > 0.5:
                 q_loss = - q1_new_action.mean() / q2_new_action.abs().mean().detach()
             else:
