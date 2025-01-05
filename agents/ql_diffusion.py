@@ -116,6 +116,8 @@ class Diffusion_QL(object):
             if self.step % 1000 == 0: print(f"Epoch: {self.step // 1000}")
             # Sample replay buffer / batch
             state, action, next_state, reward, not_done, source = replay_buffer.sample(batch_size)
+            # expert_indices = torch.where(source == 1)[0]
+            # non_expert_indices = torch.where(source == 0)[0]
 
             """ Q Training """
             current_q1, current_q2 = self.critic(state, action)
@@ -143,7 +145,7 @@ class Diffusion_QL(object):
             self.critic_optimizer.step()
 
             """ Policy Training """
-            bc_loss = self.actor.loss(action, state)
+            bc_loss = self.actor.loss(action, state).mean()
             
             #bc_loss2 = self.actor2.loss(action, state)
             new_action = self.actor(state)
