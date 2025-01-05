@@ -3,6 +3,8 @@
 
 import copy
 import numpy as np
+from sklearn.cluster import KMeans
+from sklearn.preprocessing import StandardScaler
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -128,10 +130,18 @@ class Diffusion_QL(object):
         for _ in range(iterations):
             # Sample replay buffer / batch
             state, action, next_state, reward, not_done, source = replay_buffer.sample(batch_size)
-
-            """ Q Training """
             current_q1, current_q2 = self.critic(state, action)
             q_vals = ((current_q1 + current_q2) / 2).flatten()
+            """ Clustering """
+            features = torch.cat([q_vals.reshape(-1, 1)], axis=1)
+            scaler = StandardScaler()
+            scaled_features = scaler.fit_transform(features)
+
+            n_clusters = 2
+            kmeans = KMeans(n_clusters=n_clusters, random_state=0)
+            cluster_labels = kmeans.fit_predict(scaled_features)
+            """ Q Training """
+            
             top_q_values, top_indices = torch.topk(q_vals, batch_size//2)
             bottom_q_values, bottom_indices = torch.topk(q_vals, batch_size//2, largest=False)
             #TODO: Make next_action be half from actor 1 and half from actor 2
