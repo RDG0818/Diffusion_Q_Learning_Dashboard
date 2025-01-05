@@ -10,7 +10,7 @@ def cluster_dataset(dataset, n_clusters=2, n_init=10):  # n_init for multiple re
     actions = dataset['actions']
     rewards = dataset['rewards'].reshape(-1, 1)  # Reshape to be compatible with concatenation
 
-    features = np.concatenate([states, actions, rewards], axis=1)
+    features = np.concatenate([states, actions], axis=1)
     scaler = StandardScaler()
     scaled_features = scaler.fit_transform(features)
 

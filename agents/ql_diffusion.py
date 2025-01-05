@@ -128,22 +128,41 @@ class Diffusion_QL(object):
 
         metric = {'bc_loss': [], 'bc_loss2': [], 'min_loss': [], 'ql_loss': [], 'actor_loss': [], 'critic_loss': []}
         for _ in range(iterations):
+            if self.step % 1000 == 0:
+                print(f'Epoch {self.step // 1000}')
             # Sample replay buffer / batch
             state, action, next_state, reward, not_done, source = replay_buffer.sample(batch_size)
             current_q1, current_q2 = self.critic(state, action)
             q_vals = ((current_q1 + current_q2) / 2).flatten()
-            """ Clustering """
-            features = torch.cat([q_vals.reshape(-1, 1)], axis=1)
-            scaler = StandardScaler()
-            scaled_features = scaler.fit_transform(features)
 
-            n_clusters = 2
-            kmeans = KMeans(n_clusters=n_clusters, random_state=0)
-            cluster_labels = kmeans.fit_predict(scaled_features)
+            """ Clustering """
+            with torch.no_grad():
+                indices = np.arange(len(q_vals))
+
+                features = np.concatenate([q_vals.reshape(-1, 1).to('cpu').numpy()])
+                scaler = StandardScaler()
+                scaled_features = scaler.fit_transform(features)
+
+                n_clusters = 2
+                kmeans = KMeans(n_clusters=n_clusters, n_init=10, random_state=0).fit(features)
+                cluster_labels = kmeans.labels_
+
+                zero_indices = torch.from_numpy(indices[cluster_labels == 0]).to(self.device)
+                one_indices = torch.from_numpy(indices[cluster_labels == 1]).to(self.device)
+
+                if q_vals[zero_indices].mean() > q_vals[one_indices].mean():
+                    expert_indices = zero_indices
+                    non_expert_indices = one_indices
+                else:
+                    expert_indices = one_indices
+                    non_expert_indices = zero_indices
+                if self.step % 1000 == 0:
+                    print(expert_indices.shape)
+                    print(non_expert_indices.shape)
+
+
             """ Q Training """
             
-            top_q_values, top_indices = torch.topk(q_vals, batch_size//2)
-            bottom_q_values, bottom_indices = torch.topk(q_vals, batch_size//2, largest=False)
             #TODO: Make next_action be half from actor 1 and half from actor 2
             if self.max_q_backup:
                 next_state_rpt = torch.repeat_interleave(next_state, repeats=10, dim=0)
@@ -166,13 +185,13 @@ class Diffusion_QL(object):
                 # next_state_second_half = next_state[half:]
                 # next_action = torch.cat((self.ema_model(next_state_first_half), self.ema_model2(next_state_second_half)), dim=0)
 
-                next_action = self.ema_model(next_state[top_indices])
-                target_q1, target_q2 = self.critic_target(next_state[top_indices], next_action)
+                next_action = self.ema_model(next_state[expert_indices])
+                target_q1, target_q2 = self.critic_target(next_state[expert_indices], next_action)
                 target_q = torch.min(target_q1, target_q2)
 
-            target_q = (reward[top_indices] + not_done[top_indices] * self.discount * target_q).detach()
+            target_q = (reward[expert_indices] + not_done[expert_indices] * self.discount * target_q).detach()
 
-            critic_loss = F.mse_loss(current_q1[top_indices], target_q) + F.mse_loss(current_q2[top_indices], target_q)
+            critic_loss = F.mse_loss(current_q1[expert_indices], target_q) + F.mse_loss(current_q2[expert_indices], target_q)
 
             self.critic_optimizer.zero_grad()
             critic_loss.backward()
@@ -186,17 +205,17 @@ class Diffusion_QL(object):
 
             if self.dual_diffusion: # calculating the raw loss for the second actor and finding the minimum loss
 
-                bc_loss_tensor = self.actor.loss(action[top_indices], state[top_indices])
-                bc_loss2_tensor = self.actor2.loss(action[bottom_indices], state[bottom_indices]) 
+                bc_loss_tensor = self.actor.loss(action[expert_indices], state[expert_indices])
+                bc_loss2_tensor = self.actor2.loss(action[non_expert_indices], state[non_expert_indices]) 
                 #norm_q = (target_q - target_q.min()) / (target_q.max() - target_q.min())
                 # eta = torch.randint(0, 2, (batch_size,), device=self.device)
                 # min_loss = torch.mean(eta * bc_loss_tensor + (1 - eta) * bc_loss2_tensor)
                 #min_loss = torch.mean(temp * -torch.logsumexp(-torch.stack([bc_loss_tensor, bc_loss2_tensor]) / temp, dim=0))
                 bc_loss = (bc_loss_tensor).mean()
                 bc_loss2 = (bc_loss2_tensor).mean()
-            new_action = self.actor(state[top_indices])
+            new_action = self.actor(state[expert_indices])
 
-            q1_new_action, q2_new_action = self.critic(state[top_indices], new_action)
+            q1_new_action, q2_new_action = self.critic(state[expert_indices], new_action)
             if np.random.uniform() > 0.5:
                 q_loss = - q1_new_action.mean() / q2_new_action.abs().mean().detach()
             else:
