@@ -138,13 +138,19 @@ class Diffusion_QL(object):
             """ Clustering """
             with torch.no_grad():
                 indices = np.arange(len(q_vals))
+                loss1 = self.actor.loss(action, state)
+                norm_loss1 = (loss1 - loss1.min())/(loss1.max() - loss1.min())
+                loss2 = self.actor2.loss(action, state)
+                norm_loss2 = (loss2 - loss2.min())/(loss2.max() - loss2.min())
+                norm_q = (q_vals - q_vals.min())/(q_vals.max()-q_vals.min())
+                vals = norm_loss1 - norm_loss2 + norm_q 
 
-                features = np.concatenate([q_vals.reshape(-1, 1).to('cpu').numpy()])
+                features = np.concatenate([vals.reshape(-1, 1).to('cpu').numpy()])
                 scaler = StandardScaler()
                 scaled_features = scaler.fit_transform(features)
 
                 n_clusters = 2
-                kmeans = KMeans(n_clusters=n_clusters, n_init=10, random_state=0).fit(features)
+                kmeans = KMeans(n_clusters=n_clusters, n_init=10, random_state=0).fit(scaled_features)
                 cluster_labels = kmeans.labels_
 
                 zero_indices = torch.from_numpy(indices[cluster_labels == 0]).to(self.device)
@@ -156,9 +162,6 @@ class Diffusion_QL(object):
                 else:
                     expert_indices = one_indices
                     non_expert_indices = zero_indices
-                if self.step % 1000 == 0:
-                    print(expert_indices.shape)
-                    print(non_expert_indices.shape)
 
 
             """ Q Training """
