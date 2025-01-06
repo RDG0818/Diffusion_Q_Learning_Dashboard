@@ -45,7 +45,7 @@ def train_agent(env, state_dim, action_dim, max_action, device, output_dir, args
     # Load buffer
     #dataset = d4rl.qlearning_dataset(env)
     import mixed_dataset
-    dataset = mixed_dataset.mix_datasets('hopper-medium-v2', 'hopper-expert-v2')
+    dataset = mixed_dataset.mix_datasets('walker2d-medium-v2', 'walker2d-expert-v2')
     data_sampler = Data_Sampler(dataset, device, args.reward_tune, True)
     utils.print_banner('Loaded buffer')
 
@@ -116,7 +116,7 @@ def train_agent(env, state_dim, action_dim, max_action, device, output_dir, args
         logger.record_tabular('Average Episodic N-Reward', eval_norm_res)
         logger.dump_tabular()
 
-        # eval_classifier(agent, data_sampler, batch_size=args.batch_size)
+        if curr_epoch >= 250: eval_classifier(agent, data_sampler, batch_size=args.batch_size)
 
         bc_loss = np.mean(loss_metric['bc_loss'])
         if args.early_stop:
@@ -158,28 +158,20 @@ def train_agent(env, state_dim, action_dim, max_action, device, output_dir, args
 # A fixed seed is used for the eval environment
 def eval_classifier(policy, data_sampler, batch_size):
     state, action, _, _, _, source = data_sampler.sample(batch_size)
-    cpu_source = source.to('cpu')
-    indices = np.arange(batch_size)
-    losses = policy.actor.loss(action, state)
-    features = losses.detach().to('cpu').numpy()
-    scaler = StandardScaler()
-    scaled_features = scaler.fit_transform(features)
-
-    kmeans = KMeans(n_clusters=2, n_init=10, random_state=0).fit(scaled_features)
-    cluster_labels = kmeans.labels_
-    print(batch_size)
-    print(len(losses))
-    print(len(cluster_labels))
-    # zero_indices = indices[cluster_labels == 0]
-    # one_indices = indices[cluster_labels == 1]
-
-    # if np.mean(losses[zero_indices]) < np.mean(losses[one_indices]):
-    #     expert_indices, non_expert_indices = zero_indices, one_indices
-    # else:
-    #     expert_indices, non_expert_indices = one_indices, zero_indices
-    
+    estimate = []
+    state = state.to('cpu')
+    action = action.to('cpu')
+    source = source.to('cpu')
+    for a, s in zip(action, state):
+        actor_action = policy.sample_action_tensor(s)
+        actor2_action = policy.sample_action_tensor2(s)
+        if torch.nn.functional.mse_loss(actor_action, a) < torch.nn.functional.mse_loss(actor2_action, a):
+            estimate.append(1)
+        else:
+            estimate.append(0)
+    cm = confusion_matrix(source, estimate)
     print("Confusion Matrix:")
-    print(confusion_matrix(cpu_source, cluster_labels))
+    print(cm)
     
 
 def eval_policy(policy, env_name, seed, eval_episodes=10):
