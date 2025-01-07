@@ -128,9 +128,24 @@ class Diffusion_QL(object):
         for _ in range(iterations):
             # Sample replay buffer / batch
             state, action, next_state, reward, not_done, source = replay_buffer.sample(batch_size)
+            with torch.no_grad():
+                    q1, q2 = self.critic(state, action)  # Get q1 and q2 from the tuple
+                    q_vals = torch.minimum(q1, q2).flatten() # Calculate mean and flatten
+                    new_actions = self.actor(state)
 
+                    aq1, aq2 = self.critic(state, new_actions)
+                    disadvantage_factor = 0.98 # To avoid the q values ignoring expert actions
+                    disadvantage_factor += 0.00001
+                    if disadvantage_factor > 1: disadvantage_factor = 1
+                    aq_vals = (torch.minimum(aq1, aq2) * disadvantage_factor).flatten()
+                    actor2_indices = q_vals < aq_vals
+                    
+                    actor1_indices = q_vals > aq_vals
+                    if self.step%1000 == 0: 
+                        print("q:", q_vals)
+                        print("aq:", torch.minimum(aq1, aq2).flatten())
             """ Q Training """
-            current_q1, current_q2 = self.critic(state, action)
+            current_q1, current_q2 = self.critic(state[actor1_indices], action[actor1_indices])
             #TODO: Make next_action be half from actor 1 and half from actor 2
             if self.max_q_backup:
                 next_state_rpt = torch.repeat_interleave(next_state, repeats=10, dim=0)
@@ -153,11 +168,11 @@ class Diffusion_QL(object):
                 # next_state_second_half = next_state[half:]
                 # next_action = torch.cat((self.ema_model(next_state_first_half), self.ema_model2(next_state_second_half)), dim=0)
 
-                next_action = self.ema_model(next_state)
-                target_q1, target_q2 = self.critic_target(next_state, next_action)
+                next_action = self.ema_model(next_state[actor1_indices])
+                target_q1, target_q2 = self.critic_target(next_state[actor1_indices], next_action)
                 target_q = torch.min(target_q1, target_q2)
 
-            target_q = (reward + not_done * self.discount * target_q).detach()
+            target_q = (reward[actor1_indices] + not_done[actor1_indices] * self.discount * target_q).detach()
 
             critic_loss = F.mse_loss(current_q1, target_q) + F.mse_loss(current_q2, target_q)
 
@@ -175,28 +190,37 @@ class Diffusion_QL(object):
                 
                 bc_loss_tensor = self.actor.loss(action, state)
                 bc_loss2_tensor = self.actor2.loss(action, state)
-                with torch.no_grad():
-                    q1, q2 = self.critic(state, action)  # Get q1 and q2 from the tuple
-                    q_vals = ((q1 + q2) / 2).flatten() # Calculate mean and flatten
+                
+                    # deviation_factor = 2
 
-                    deviation_factor = 2
+                    # top_q, top_indices = torch.topk(q_vals, batch_size//2)
+                    # bottom_q, bottom_indices = torch.topk(q_vals, batch_size//2, largest=False)
 
-                    top_q, top_indices = torch.topk(q_vals, batch_size//2)
-                    bottom_q, bottom_indices = torch.topk(q_vals, batch_size//2, largest=False)
+                    # norm_top_q = (top_q - top_q.min()) / ((top_q.max() - top_q.min()) * (deviation_factor))
+                    # norm_bottom_q = (bottom_q - bottom_q.min()) / ((bottom_q.max() - bottom_q.min()) * (deviation_factor))
 
-                    norm_top_q = (top_q - top_q.min()) / ((top_q.max() - top_q.min()) * (deviation_factor))
-                    norm_bottom_q = (bottom_q - bottom_q.min()) / ((bottom_q.max() - bottom_q.min()) * (deviation_factor))
+                    # bc_loss_tensor[bottom_indices] /= norm_bottom_q #penalizing low q value actions
+                    # bc_loss2_tensor[top_indices] /= norm_top_q #penalizing high q value actions
+                bc_loss = (bc_loss_tensor[actor1_indices]).mean()
+                bc_loss2 = (bc_loss2_tensor[actor2_indices]).mean()
 
-                    bc_loss_tensor[bottom_indices] /= norm_bottom_q #penalizing low q value actions
-                    bc_loss2_tensor[top_indices] /= norm_top_q #penalizing high q value actions
-                min_loss = torch.minimum(bc_loss_tensor, bc_loss2_tensor)
-                actor_loss = min_loss.mean()
+                new_action = self.actor(state[actor1_indices]) 
+                q1_new_action, q2_new_action = self.critic(state[actor1_indices], new_action)
+                if np.random.uniform() > 0.5:
+                    q_loss = - q1_new_action.mean() / q2_new_action.abs().mean().detach()
+                else:
+                    q_loss = - q2_new_action.mean() / q1_new_action.abs().mean().detach()
+                actor_loss = bc_loss + q_loss
+
+                actor2_loss = bc_loss2 
+              
                 
             self.actor_optimizer.zero_grad()
             self.actor2_optimizer.zero_grad()
             if self.grad_norm > 0: 
                 actor_grad_norms = nn.utils.clip_grad_norm_(self.actor.parameters(), max_norm=self.grad_norm, norm_type=2)
             actor_loss.backward()
+            actor2_loss.backward()
             self.actor_optimizer.step()
             self.actor2_optimizer.step()
     
