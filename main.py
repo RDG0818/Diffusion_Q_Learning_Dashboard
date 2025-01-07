@@ -10,6 +10,7 @@ import json
 from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import confusion_matrix
+import wandb
 
 import d4rl
 from utils import utils
@@ -97,26 +98,21 @@ def train_agent(env, state_dim, action_dim, max_action, device, output_dir, args
 
         # Logging
         utils.print_banner(f"Train step: {training_iters}", separator="*", num_star=90)
-        logger.record_tabular('Trained Epochs', curr_epoch)
-        logger.record_tabular('BC Loss', np.mean(loss_metric['bc_loss']))
-        logger.record_tabular('QL Loss', np.mean(loss_metric['ql_loss']))
-        logger.record_tabular('Actor Loss', np.mean(loss_metric['actor_loss']))
-        logger.record_tabular('Critic Loss', np.mean(loss_metric['critic_loss']))
-        logger.dump_tabular()
+        print('Trained Epochs', curr_epoch)
+        print('BC Loss', np.mean(loss_metric['bc_loss']))
+        print('QL Loss', np.mean(loss_metric['ql_loss']))
+        print('Actor Loss', np.mean(loss_metric['actor_loss']))
+        print('Critic Loss', np.mean(loss_metric['critic_loss']))
 
         # Evaluation
         eval_res, eval_res_std, eval_norm_res, eval_norm_res_std = eval_policy(agent, args.env_name, args.seed,
                                                                                eval_episodes=args.eval_episodes)
-        evaluations.append([eval_res, eval_res_std, eval_norm_res, eval_norm_res_std,
-                            np.mean(loss_metric['bc_loss']), np.mean(loss_metric['ql_loss']),
-                            np.mean(loss_metric['actor_loss']), np.mean(loss_metric['critic_loss']),
-                            curr_epoch])
-        np.save(os.path.join(output_dir, "eval"), evaluations)
-        logger.record_tabular('Average Episodic Reward', eval_res)
-        logger.record_tabular('Average Episodic N-Reward', eval_norm_res)
-        logger.dump_tabular()
-
-        if curr_epoch >= 250: eval_classifier(agent, data_sampler, batch_size=args.batch_size)
+        
+        if curr_epoch >= 500: 
+            acc = eval_classifier(agent, data_sampler, batch_size=args.batch_size)
+        else:
+            acc = .5
+        wandb.log({"Eval": eval_res, "Norm Eval" : eval_norm_res, "Class Acc": acc})    
 
         bc_loss = np.mean(loss_metric['bc_loss'])
         if args.early_stop:
@@ -170,8 +166,10 @@ def eval_classifier(policy, data_sampler, batch_size):
         else:
             estimate.append(0)
     cm = confusion_matrix(source, estimate)
+    
     print("Confusion Matrix:")
     print(cm)
+    return cm.trace()/cm.sum()
     
 
 def eval_policy(policy, env_name, seed, eval_episodes=10):
@@ -280,6 +278,7 @@ if __name__ == "__main__":
     variant.update(max_action=max_action)
     setup_logger(os.path.basename(results_dir), variant=variant, log_dir=results_dir)
     utils.print_banner(f"Env: {args.env_name}, state_dim: {state_dim}, action_dim: {action_dim}")
+    wandb.init(project='DQL TEST')
 
     train_agent(env,
                 state_dim,
