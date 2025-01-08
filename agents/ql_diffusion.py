@@ -8,8 +8,10 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.optim.lr_scheduler import CosineAnnealingLR
 from utils.logger import logger
-from sklearn.cluster import KMeans
+from sklearn.cluster import KMeans, MiniBatchKMeans
 from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import RobustScaler
+from sklearn.metrics import confusion_matrix
 
 from agents.diffusion import Diffusion
 from agents.model import MLP
@@ -47,6 +49,31 @@ class Critic(nn.Module):
         q1, q2 = self.forward(state, action)
         return torch.min(q1, q2)
 
+class Cluster:
+    def __init__(self, n_clusters=2, batch_size=256, n_init=10):
+        self.kmeans = MiniBatchKMeans(n_clusters=n_clusters, batch_size=batch_size, n_init=n_init)
+        self.scalar = StandardScaler()
+        self.cluster_centers = None
+
+    def features(self, state, action, q_value, bc_loss, bc_loss2):
+        state = state.flatten().to('cpu').numpy().reshape(state.shape[0], -1)
+        action = action.flatten().to('cpu').numpy().reshape(action.shape[0], -1)
+        q_value = q_value.reshape(-1, 1).to('cpu').numpy()
+        bc_loss = bc_loss.to('cpu').numpy()
+        bc_loss2 = bc_loss2.to('cpu').numpy()
+        return np.concatenate([state, action, q_value, bc_loss, bc_loss2], axis = 1)
+
+    def predict(self, features):
+        if self.cluster_centers is None: # check if cluster centers are initialized
+            self.scalar.fit(features)
+            scaled_features = self.scalar.transform(features)
+            self.cluster_centers = self.kmeans.fit(scaled_features).cluster_centers_ # fit on first batch
+        else:
+            scaled_features = self.scalar.transform(features)
+        prediction = self.kmeans.predict(scaled_features)
+        self.kmeans = self.kmeans.partial_fit(scaled_features)
+        return prediction
+
 
 class Diffusion_QL(object):
     def __init__(self,
@@ -78,6 +105,9 @@ class Diffusion_QL(object):
                                beta_schedule=beta_schedule, n_timesteps=n_timesteps,).to(device)
         self.actor_optimizer = torch.optim.Adam(self.actor.parameters(), lr=lr)
         self.actor2_optimizer = torch.optim.Adam(self.actor2.parameters(), lr=lr)
+
+        self.cluster = Cluster(2, 256)
+        self.critic_training_time = 10e4 * 2.5
 
         self.lr_decay = lr_decay
         self.grad_norm = grad_norm
@@ -120,7 +150,7 @@ class Diffusion_QL(object):
             state, action, next_state, reward, not_done, source = replay_buffer.sample(batch_size)
 
             """ Q Training """
-            if self.step < 10e4 * 5:
+            if self.step < self.critic_training_time:
                 current_q1, current_q2 = self.critic(state, action)
 
                 if self.max_q_backup:
@@ -147,24 +177,33 @@ class Diffusion_QL(object):
 
             """Clustering"""
             with torch.no_grad():
-                if self.step < 10e4 * 5: 
+                if self.step < self.critic_training_time: 
                     top_indices = torch.arange(batch_size)
                     bottom_indices = torch.arange(batch_size)
                 else:
                     q1, q2 = self.critic(state, action)
                     q_vals = torch.minimum(q1, q2).flatten()
-                    # states = state.flatten().to('cpu').numpy()
-                    # actions = action.flatten().to('cpu').numpy()
-                    # bc_loss_clustering = self.actor.loss(action, state).to('cpu').numpy()
-                    # bc_loss2_clustering = self.actor2.loss(action, state).to('cpu').numpy()
-                    # features = np.concatenate([states, actions, np.stack([q_vals, bc_loss_clustering, bc_loss2_clustering], axis=-1)], axis=1)
-                    # scaler = StandardScaler()
-                    # scaled_features = scaler.fit_transform(features)
-                    # kmeans = KMeans(n_clusters=2, random_state=0)
-                    # cluster_labels = kmeans.predict(scaled_features)
+                    loss1 = self.actor.loss(action, state)
+                    loss2 = self.actor2.loss(action, state)
 
-                    _, top_indices = torch.topk(q_vals, int(batch_size*0.9))
-                    _, bottom_indices = torch.topk(q_vals, int(batch_size*0.9), largest=False)
+                    features = self.cluster.features(state, action, q_vals, loss1, loss2)
+                    cluster_labels = self.cluster.predict(features)
+
+                    if q_vals[cluster_labels == 0].mean() > q_vals[cluster_labels == 1].mean():
+                        top_indices = cluster_labels == 0
+                        bottom_indices = cluster_labels == 1
+                    else:
+                        top_indices = cluster_labels == 1
+                        bottom_indices = cluster_labels == 0
+
+                    #Debugging metrics
+                    if self.step % 5000 == 0:
+                        print("Q Values 0:", q_vals[cluster_labels == 0].mean())
+                        print("Label 0 Size:", batch_size - cluster_labels.sum())
+                        print("Q Values 1:", q_vals[cluster_labels == 1].mean())
+                        print("Label 1 Size:", cluster_labels.sum())
+                        print(confusion_matrix(source.cpu(), cluster_labels))
+                        print()
             
             """ Policy Training """
             bc_loss = self.actor.loss(action[top_indices], state[top_indices]).mean()
@@ -201,11 +240,12 @@ class Diffusion_QL(object):
 
 
             """ Step Target network """
-            if self.step % self.update_ema_every == 0 and self.step < 10e4 * 5:
+            if self.step % self.update_ema_every == 0 and self.step < self.critic_training_time:
                 self.step_ema()
 
-            for param, target_param in zip(self.critic.parameters(), self.critic_target.parameters()):
-                target_param.data.copy_(self.tau * param.data + (1 - self.tau) * target_param.data)
+            if self.step <self.critic_training_time: 
+                for param, target_param in zip(self.critic.parameters(), self.critic_target.parameters()):
+                    target_param.data.copy_(self.tau * param.data + (1 - self.tau) * target_param.data)
 
             self.step += 1
 
@@ -215,7 +255,7 @@ class Diffusion_QL(object):
             metric['actor_loss'].append(actor_loss.item())
             metric['bc_loss'].append(bc_loss.item())
             metric['ql_loss'].append(q_loss.item())
-            if self.step < 10e4 * 5: metric['critic_loss'].append(critic_loss.item())
+            if self.step < self.critic_training_time: metric['critic_loss'].append(critic_loss.item())
 
         if self.lr_decay: 
             self.actor_lr_scheduler.step()
