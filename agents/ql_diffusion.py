@@ -55,13 +55,14 @@ class Cluster:
         self.scalar = StandardScaler()
         self.cluster_centers = None
 
-    def features(self, state, action, q_value, bc_loss, bc_loss2):
+    def features(self, state, action, next_state, q_value, bc_loss, bc_loss2):
         state = state.flatten().to('cpu').numpy().reshape(state.shape[0], -1)
         action = action.flatten().to('cpu').numpy().reshape(action.shape[0], -1)
+        next_state = next_state.flatten().to('cpu').numpy().reshape(action.shape[0], -1)
         q_value = q_value.reshape(-1, 1).to('cpu').numpy()
         bc_loss = bc_loss.to('cpu').numpy()
         bc_loss2 = bc_loss2.to('cpu').numpy()
-        return np.concatenate([state, action, q_value, bc_loss, bc_loss2], axis = 1)
+        return np.concatenate([state, action, next_state, q_value, bc_loss, bc_loss2], axis = 1)
 
     def predict(self, features):
         if self.cluster_centers is None: # check if cluster centers are initialized
@@ -107,7 +108,7 @@ class Diffusion_QL(object):
         self.actor2_optimizer = torch.optim.Adam(self.actor2.parameters(), lr=lr)
 
         self.cluster = Cluster(2, 256)
-        self.critic_training_time = 10e4 * 2.5
+        self.critic_training_time = 10e6
 
         self.lr_decay = lr_decay
         self.grad_norm = grad_norm
@@ -186,7 +187,7 @@ class Diffusion_QL(object):
                     loss1 = self.actor.loss(action, state)
                     loss2 = self.actor2.loss(action, state)
 
-                    features = self.cluster.features(state, action, q_vals, loss1, loss2)
+                    features = self.cluster.features(state, action, next_state, q_vals, loss1, loss2)
                     cluster_labels = self.cluster.predict(features)
 
                     if q_vals[cluster_labels == 0].mean() > q_vals[cluster_labels == 1].mean():
@@ -238,6 +239,30 @@ class Diffusion_QL(object):
             self.actor_optimizer.step()
             self.actor2_optimizer.step()
 
+            """ Testing Stuff """
+            with torch.no_grad():
+                if self.step % 5000 == 0:
+                    q_val = torch.minimum(current_q1, current_q1).detach()
+                    aq1, aq2 = self.critic(state, new_action)
+                    aq_val = torch.minimum(aq1, aq2)
+                    source = source.cpu()
+                    q_val = q_val.cpu().numpy().flatten()
+                    aq_val = aq_val.cpu().numpy().flatten()
+                    print(f"Step Number: {self.step}")
+                    print("Expert:")
+                    print(f"Mean - {np.mean(q_val[source == 1], axis=0)}")
+                    print(f"Median - {np.median(q_val[source == 1], axis=0)}")
+                    print(f"STD - {np.std(q_val[source == 1])}")
+                    print(f"Max - {np.max(q_val[source == 1], axis=0)}")
+                    print(f"Min - {np.min(q_val[source == 1], axis=0)}")
+                    print()
+                    print("Medium:")
+                    print(f"Mean - {np.mean(q_val[source == 0], axis=0)}")
+                    print(f"Median - {np.median(q_val[source == 0], axis=0)}")
+                    print(f"STD - {np.std(q_val[source == 0])}")
+                    print(f"Max - {np.max(q_val[source == 0], axis=0)}")
+                    print(f"Min - {np.min(q_val[source == 0], axis=0)}")
+                    print()
 
             """ Step Target network """
             if self.step % self.update_ema_every == 0 and self.step < self.critic_training_time:
