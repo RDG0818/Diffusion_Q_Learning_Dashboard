@@ -7,8 +7,7 @@ import numpy as np
 import os
 import torch
 import json
-from sklearn.cluster import KMeans
-from sklearn.preprocessing import StandardScaler
+from cluster import Cluster
 from sklearn.metrics import confusion_matrix
 import wandb
 
@@ -50,6 +49,10 @@ def train_agent(env, state_dim, action_dim, max_action, device, output_dir, args
     data_sampler = Data_Sampler(dataset, device, args.reward_tune, True)
     utils.print_banner('Loaded buffer')
 
+    n_clusters = 8
+    cluster = Cluster(n_clusters)
+    cluster.fit(data_sampler.state)
+
     if args.algo == 'ql':
         from agents.ql_diffusion import Diffusion_QL as Agent
         agent = Agent(state_dim=state_dim,
@@ -65,7 +68,8 @@ def train_agent(env, state_dim, action_dim, max_action, device, output_dir, args
                       lr=args.lr,
                       lr_decay=args.lr_decay,
                       lr_maxt=args.num_epochs,
-                      grad_norm=args.gn)
+                      grad_norm=args.gn,
+                      cluster=cluster)
     elif args.algo == 'bc':
         from agents.bc_diffusion import Diffusion_BC as Agent
         agent = Agent(state_dim=state_dim,
@@ -108,7 +112,7 @@ def train_agent(env, state_dim, action_dim, max_action, device, output_dir, args
         eval_res, eval_res_std, eval_norm_res, eval_norm_res_std = eval_policy(agent, args.env_name, args.seed,
                                                                                eval_episodes=args.eval_episodes)
         
-        if curr_epoch >= 500: 
+        if curr_epoch >= 0: 
             acc = eval_classifier(agent, data_sampler, batch_size=args.batch_size)
         else:
             acc = .5

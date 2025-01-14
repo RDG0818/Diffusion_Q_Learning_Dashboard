@@ -49,31 +49,31 @@ class Critic(nn.Module):
         q1, q2 = self.forward(state, action)
         return torch.min(q1, q2)
 
-class Cluster:
-    def __init__(self, n_clusters=2, batch_size=256, n_init=10):
-        self.kmeans = MiniBatchKMeans(n_clusters=n_clusters, batch_size=batch_size, n_init=n_init)
-        self.scalar = StandardScaler()
-        self.cluster_centers = None
+# class Cluster:
+#     def __init__(self, n_clusters=2, batch_size=256, n_init=10):
+#         self.kmeans = MiniBatchKMeans(n_clusters=n_clusters, batch_size=batch_size, n_init=n_init)
+#         self.scalar = StandardScaler()
+#         self.cluster_centers = None
 
-    def features(self, state, action, next_state, q_value, bc_loss, bc_loss2):
-        state = state.flatten().to('cpu').numpy().reshape(state.shape[0], -1)
-        action = action.flatten().to('cpu').numpy().reshape(action.shape[0], -1)
-        next_state = next_state.flatten().to('cpu').numpy().reshape(action.shape[0], -1)
-        q_value = q_value.reshape(-1, 1).to('cpu').numpy()
-        bc_loss = bc_loss.to('cpu').numpy()
-        bc_loss2 = bc_loss2.to('cpu').numpy()
-        return np.concatenate([state, action, next_state, q_value, bc_loss, bc_loss2], axis = 1)
+#     def features(self, state, action, next_state, q_value, bc_loss, bc_loss2):
+#         state = state.flatten().to('cpu').numpy().reshape(state.shape[0], -1)
+#         action = action.flatten().to('cpu').numpy().reshape(action.shape[0], -1)
+#         next_state = next_state.flatten().to('cpu').numpy().reshape(action.shape[0], -1)
+#         q_value = q_value.reshape(-1, 1).to('cpu').numpy()
+#         bc_loss = bc_loss.to('cpu').numpy()
+#         bc_loss2 = bc_loss2.to('cpu').numpy()
+#         return np.concatenate([state, action, next_state, q_value, bc_loss, bc_loss2], axis = 1)
 
-    def predict(self, features):
-        if self.cluster_centers is None: # check if cluster centers are initialized
-            self.scalar.fit(features)
-            scaled_features = self.scalar.transform(features)
-            self.cluster_centers = self.kmeans.fit(scaled_features).cluster_centers_ # fit on first batch
-        else:
-            scaled_features = self.scalar.transform(features)
-        prediction = self.kmeans.predict(scaled_features)
-        self.kmeans = self.kmeans.partial_fit(scaled_features)
-        return prediction
+#     def predict(self, features):
+#         if self.cluster_centers is None: # check if cluster centers are initialized
+#             self.scalar.fit(features)
+#             scaled_features = self.scalar.transform(features)
+#             self.cluster_centers = self.kmeans.fit(scaled_features).cluster_centers_ # fit on first batch
+#         else:
+#             scaled_features = self.scalar.transform(features)
+#         prediction = self.kmeans.predict(scaled_features)
+#         self.kmeans = self.kmeans.partial_fit(scaled_features)
+#         return prediction
 
 
 class Diffusion_QL(object):
@@ -95,6 +95,7 @@ class Diffusion_QL(object):
                  lr_decay=False,
                  lr_maxt=1000,
                  grad_norm=1.0,
+                 cluster=None
                  ):
 
         self.model = MLP(state_dim=state_dim, action_dim=action_dim, device=device)
@@ -107,8 +108,8 @@ class Diffusion_QL(object):
         self.actor_optimizer = torch.optim.Adam(self.actor.parameters(), lr=lr)
         self.actor2_optimizer = torch.optim.Adam(self.actor2.parameters(), lr=lr)
 
-        self.cluster = Cluster(2, 256)
-        self.critic_training_time = 10e6
+        self.cluster = cluster
+        self.critic_training_time = 10e3 * 5
 
         self.lr_decay = lr_decay
         self.grad_norm = grad_norm
@@ -149,6 +150,8 @@ class Diffusion_QL(object):
             # if self.step % 1000 == 0: print(f"Epoch: {self.step // 1000}")
             # Sample replay buffer / batch
             state, action, next_state, reward, not_done, source = replay_buffer.sample(batch_size)
+            state_copy = state.cpu().numpy().astype(np.float64)
+            labels = torch.from_numpy(self.cluster.predict(state_copy)).to(self.device)
 
             """ Q Training """
             if self.step < self.critic_training_time:
@@ -182,30 +185,24 @@ class Diffusion_QL(object):
                     top_indices = torch.arange(batch_size)
                     bottom_indices = torch.arange(batch_size)
                 else:
+                    estimate = torch.zeros(batch_size, dtype=torch.bool)
+                    indices = torch.arange(batch_size).to(self.device)
                     q1, q2 = self.critic(state, action)
-                    q_vals = torch.minimum(q1, q2).flatten()
-                    loss1 = self.actor.loss(action, state)
-                    loss2 = self.actor2.loss(action, state)
+                    q_vals = torch.minimum(q1, q2)
+                    for i in range(8):
+                        cluster_indices = indices[labels == i]
 
-                    features = self.cluster.features(state, action, next_state, q_vals, loss1, loss2)
-                    cluster_labels = self.cluster.predict(features)
+                        if cluster_indices.numel() > 0:  # Check for empty cluster   
+                            q_mean = q_vals[cluster_indices].mean()
+                            q_indices = q_vals[cluster_indices] > q_mean
+                            q_indices = q_indices.flatten()
+                            expert_indices = cluster_indices[q_indices]  # Directly filter cluster indices
+                            estimate[expert_indices] = True
+                    top_indices = estimate
+                    bottom_indices = ~estimate
+                    if self.step % 5000 == 0: print(estimate)
 
-                    if q_vals[cluster_labels == 0].mean() > q_vals[cluster_labels == 1].mean():
-                        top_indices = cluster_labels == 0
-                        bottom_indices = cluster_labels == 1
-                    else:
-                        top_indices = cluster_labels == 1
-                        bottom_indices = cluster_labels == 0
 
-                    #Debugging metrics
-                    if self.step % 5000 == 0:
-                        print("Q Values 0:", q_vals[cluster_labels == 0].mean())
-                        print("Label 0 Size:", batch_size - cluster_labels.sum())
-                        print("Q Values 1:", q_vals[cluster_labels == 1].mean())
-                        print("Label 1 Size:", cluster_labels.sum())
-                        print(confusion_matrix(source.cpu(), cluster_labels))
-                        print()
-            
             """ Policy Training """
             bc_loss = self.actor.loss(action[top_indices], state[top_indices]).mean()
             
@@ -238,31 +235,6 @@ class Diffusion_QL(object):
                 actor2_grad_norms = nn.utils.clip_grad_norm_(self.actor2.parameters(), max_norm=self.grad_norm, norm_type=2)
             self.actor_optimizer.step()
             self.actor2_optimizer.step()
-
-            """ Testing Stuff """
-            with torch.no_grad():
-                if self.step % 5000 == 0:
-                    q_val = torch.minimum(current_q1, current_q1).detach()
-                    aq1, aq2 = self.critic(state, new_action)
-                    aq_val = torch.minimum(aq1, aq2)
-                    source = source.cpu()
-                    q_val = q_val.cpu().numpy().flatten()
-                    aq_val = aq_val.cpu().numpy().flatten()
-                    print(f"Step Number: {self.step}")
-                    print("Expert:")
-                    print(f"Mean - {np.mean(q_val[source == 1], axis=0)}")
-                    print(f"Median - {np.median(q_val[source == 1], axis=0)}")
-                    print(f"STD - {np.std(q_val[source == 1])}")
-                    print(f"Max - {np.max(q_val[source == 1], axis=0)}")
-                    print(f"Min - {np.min(q_val[source == 1], axis=0)}")
-                    print()
-                    print("Medium:")
-                    print(f"Mean - {np.mean(q_val[source == 0], axis=0)}")
-                    print(f"Median - {np.median(q_val[source == 0], axis=0)}")
-                    print(f"STD - {np.std(q_val[source == 0])}")
-                    print(f"Max - {np.max(q_val[source == 0], axis=0)}")
-                    print(f"Min - {np.min(q_val[source == 0], axis=0)}")
-                    print()
 
             """ Step Target network """
             if self.step % self.update_ema_every == 0 and self.step < self.critic_training_time:
