@@ -2,7 +2,7 @@
   "T": 5,
   "action_dim": 6,
   "algo": "ql",
-  "batch_size": 256,
+  "batch_size": 512,
   "beta_schedule": "vp",
   "device": "cuda:0",
   "dir": "results",

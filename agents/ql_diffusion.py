@@ -95,7 +95,8 @@ class Diffusion_QL(object):
                  lr_decay=False,
                  lr_maxt=1000,
                  grad_norm=1.0,
-                 cluster=None
+                 cluster=None,
+                 n_clusters=10
                  ):
 
         self.model = MLP(state_dim=state_dim, action_dim=action_dim, device=device)
@@ -109,7 +110,8 @@ class Diffusion_QL(object):
         self.actor2_optimizer = torch.optim.Adam(self.actor2.parameters(), lr=lr)
 
         self.cluster = cluster
-        self.critic_training_time = 10e3 * 5
+        self.critic_training_time = 10e4
+        self.n_clusters = n_clusters
 
         self.lr_decay = lr_decay
         self.grad_norm = grad_norm
@@ -147,8 +149,6 @@ class Diffusion_QL(object):
         
         metric = {'bc_loss': [], 'ql_loss': [], 'actor_loss': [], 'critic_loss': []}
         for _ in range(iterations):
-            # if self.step % 1000 == 0: print(f"Epoch: {self.step // 1000}")
-            # Sample replay buffer / batch
             state, action, next_state, reward, not_done, source = replay_buffer.sample(batch_size)
             state_copy = state.cpu().numpy().astype(np.float64)
             labels = torch.from_numpy(self.cluster.predict(state_copy)).to(self.device)
@@ -189,7 +189,7 @@ class Diffusion_QL(object):
                     indices = torch.arange(batch_size).to(self.device)
                     q1, q2 = self.critic(state, action)
                     q_vals = torch.minimum(q1, q2)
-                    for i in range(8):
+                    for i in range(self.n_clusters):
                         cluster_indices = indices[labels == i]
 
                         if cluster_indices.numel() > 0:  # Check for empty cluster   
@@ -200,7 +200,11 @@ class Diffusion_QL(object):
                             estimate[expert_indices] = True
                     top_indices = estimate
                     bottom_indices = ~estimate
-                    if self.step % 5000 == 0: print(estimate)
+                    if self.step % 5000 == 0: 
+                        print("Time Step:", self.step)
+                        temp = estimate.cpu().numpy().astype(np.int32)
+                        cm = confusion_matrix(source.cpu(), temp)
+                        print(cm)
 
 
             """ Policy Training """

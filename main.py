@@ -49,7 +49,7 @@ def train_agent(env, state_dim, action_dim, max_action, device, output_dir, args
     data_sampler = Data_Sampler(dataset, device, args.reward_tune, True)
     utils.print_banner('Loaded buffer')
 
-    n_clusters = 8
+    n_clusters = 10
     cluster = Cluster(n_clusters)
     cluster.fit(data_sampler.state)
 
@@ -69,7 +69,8 @@ def train_agent(env, state_dim, action_dim, max_action, device, output_dir, args
                       lr_decay=args.lr_decay,
                       lr_maxt=args.num_epochs,
                       grad_norm=args.gn,
-                      cluster=cluster)
+                      cluster=cluster,
+                      n_clusters = n_clusters)
     elif args.algo == 'bc':
         from agents.bc_diffusion import Diffusion_BC as Agent
         agent = Agent(state_dim=state_dim,
@@ -212,7 +213,7 @@ if __name__ == "__main__":
     parser.add_argument("--num_steps_per_epoch", default=1000, type=int)
 
     ### Optimization Setups ###
-    parser.add_argument("--batch_size", default=256, type=int)
+    parser.add_argument("--batch_size", default=512, type=int)
     parser.add_argument("--lr_decay", action='store_true')
     parser.add_argument('--early_stop', action='store_true')
     parser.add_argument('--save_best_model', action='store_true')
