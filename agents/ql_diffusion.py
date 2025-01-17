@@ -141,8 +141,6 @@ class Diffusion_QL(object):
         self.max_q_backup = max_q_backup
 
     def step_ema(self):
-        if self.step < self.step_start_ema:
-            return
         self.ema.update_model_average(self.ema_model, self.actor)
 
     def train(self, replay_buffer, iterations, batch_size=100, log_writer=None):
@@ -153,58 +151,67 @@ class Diffusion_QL(object):
             state_copy = state.cpu().numpy().astype(np.float64)
             labels = torch.from_numpy(self.cluster.predict(state_copy)).to(self.device)
 
-            """ Q Training """
-            if self.step < self.critic_training_time:
-                current_q1, current_q2 = self.critic(state, action)
-
-                if self.max_q_backup:
-                    next_state_rpt = torch.repeat_interleave(next_state, repeats=10, dim=0)
-                    next_action_rpt = self.ema_model(next_state_rpt)
-                    target_q1, target_q2 = self.critic_target(next_state_rpt, next_action_rpt)
-                    target_q1 = target_q1.view(batch_size, 10).max(dim=1, keepdim=True)[0]
-                    target_q2 = target_q2.view(batch_size, 10).max(dim=1, keepdim=True)[0]
-                    target_q = torch.min(target_q1, target_q2)
-                else:
-                    next_action = self.ema_model(next_state)
-                    target_q1, target_q2 = self.critic_target(next_state, next_action)
-                    target_q = torch.min(target_q1, target_q2)
-
-                target_q = (reward + not_done * self.discount * target_q).detach()
-
-                critic_loss = F.mse_loss(current_q1, target_q) + F.mse_loss(current_q2, target_q)
-
-                self.critic_optimizer.zero_grad()
-                critic_loss.backward()
-                if self.grad_norm > 0:
-                    critic_grad_norms = nn.utils.clip_grad_norm_(self.critic.parameters(), max_norm=self.grad_norm, norm_type=2)
-                self.critic_optimizer.step()
 
             """Clustering"""
             with torch.no_grad():
-                if self.step < self.critic_training_time: 
-                    top_indices = torch.arange(batch_size)
-                    bottom_indices = torch.arange(batch_size)
-                else:
-                    estimate = torch.zeros(batch_size, dtype=torch.bool)
-                    indices = torch.arange(batch_size).to(self.device)
-                    q1, q2 = self.critic(state, action)
-                    q_vals = torch.minimum(q1, q2)
-                    for i in range(self.n_clusters):
-                        cluster_indices = indices[labels == i]
+                
+                expert_estimate = torch.zeros(batch_size, dtype=torch.bool)
+                medium_estimate = torch.zeros(batch_size, dtype=torch.bool)
+                indices = torch.arange(batch_size).to(self.device)
+                q1, q2 = self.critic(state, action)
+                q_vals = torch.minimum(q1, q2).flatten()
+                loss1 = torch.mean(self.actor.loss(action, state), dim=1).flatten()
+                loss2 = torch.mean(self.actor2.loss(action, state), dim=1).flatten()
+                a = 0
+                b = 0
+                q_vals = -a * loss1 + b * loss2 + q_vals
+                for i in range(self.n_clusters):
+                    cluster_indices = indices[labels == i]
 
-                        if cluster_indices.numel() > 0:  # Check for empty cluster   
-                            q_mean = q_vals[cluster_indices].mean()
-                            q_indices = q_vals[cluster_indices] > q_mean
-                            q_indices = q_indices.flatten()
-                            expert_indices = cluster_indices[q_indices]  # Directly filter cluster indices
-                            estimate[expert_indices] = True
-                    top_indices = estimate
-                    bottom_indices = ~estimate
-                    if self.step % 5000 == 0: 
-                        print("Time Step:", self.step)
-                        temp = estimate.cpu().numpy().astype(np.int32)
-                        cm = confusion_matrix(source.cpu(), temp)
-                        print(cm)
+                    if cluster_indices.numel() > 0:  # Check for empty cluster   
+                        input_size = round((cluster_indices.shape[0]) / (1+self.step/250000))
+                        if input_size < cluster_indices.shape[0]//2: input_size = cluster_indices.shape[0]//2
+
+                        _, top_q_indices_indices = torch.topk(q_vals[cluster_indices], input_size)
+                        _, bottom_q_indices_indices = torch.topk(q_vals[cluster_indices], input_size, largest=False)
+                        top_q_indices = cluster_indices[top_q_indices_indices]
+                        bottom_q_indices = cluster_indices[bottom_q_indices_indices]
+ 
+                        expert_estimate[top_q_indices] = True
+                        medium_estimate[bottom_q_indices] = True
+                top_indices = expert_estimate
+                bottom_indices = medium_estimate
+                if self.step % 10000 == 0: 
+                    print("Time Step:", self.step, "Q Value Classification:")
+                    temp = expert_estimate.cpu().numpy().astype(np.int32)
+                    cm = confusion_matrix(source.cpu(), temp)
+                    print(cm)
+
+            """ Q Training """
+            current_q1, current_q2 = self.critic(state[top_indices], action[top_indices])
+
+            if self.max_q_backup:
+                next_state_rpt = torch.repeat_interleave(next_state, repeats=10, dim=0)
+                next_action_rpt = self.ema_model(next_state_rpt)
+                target_q1, target_q2 = self.critic_target(next_state_rpt, next_action_rpt)
+                target_q1 = target_q1.view(batch_size, 10).max(dim=1, keepdim=True)[0]
+                target_q2 = target_q2.view(batch_size, 10).max(dim=1, keepdim=True)[0]
+                target_q = torch.min(target_q1, target_q2)
+            else:
+                next_action = self.ema_model(next_state[top_indices])
+                target_q1, target_q2 = self.critic_target(next_state[top_indices], next_action)
+                target_q = torch.min(target_q1, target_q2)
+
+            target_q = (reward[top_indices] + not_done[top_indices] * self.discount * target_q).detach()
+
+            critic_loss = F.mse_loss(current_q1, target_q) + F.mse_loss(current_q2, target_q)
+
+            self.critic_optimizer.zero_grad()
+            critic_loss.backward()
+            if self.grad_norm > 0:
+                critic_grad_norms = nn.utils.clip_grad_norm_(self.critic.parameters(), max_norm=self.grad_norm, norm_type=2)
+            self.critic_optimizer.step()
+
 
 
             """ Policy Training """
@@ -241,12 +248,12 @@ class Diffusion_QL(object):
             self.actor2_optimizer.step()
 
             """ Step Target network """
-            if self.step % self.update_ema_every == 0 and self.step < self.critic_training_time:
+            if self.step % self.update_ema_every == 0:
                 self.step_ema()
 
-            if self.step <self.critic_training_time: 
-                for param, target_param in zip(self.critic.parameters(), self.critic_target.parameters()):
-                    target_param.data.copy_(self.tau * param.data + (1 - self.tau) * target_param.data)
+            
+            for param, target_param in zip(self.critic.parameters(), self.critic_target.parameters()):
+                target_param.data.copy_(self.tau * param.data + (1 - self.tau) * target_param.data)
 
             self.step += 1
 
@@ -256,7 +263,7 @@ class Diffusion_QL(object):
             metric['actor_loss'].append(actor_loss.item())
             metric['bc_loss'].append(bc_loss.item())
             metric['ql_loss'].append(q_loss.item())
-            if self.step < self.critic_training_time: metric['critic_loss'].append(critic_loss.item())
+            metric['critic_loss'].append(critic_loss.item())
 
         if self.lr_decay: 
             self.actor_lr_scheduler.step()
