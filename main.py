@@ -17,6 +17,8 @@ from utils.data_sampler import Data_Sampler
 from utils.logger import logger, setup_logger
 from torch.utils.tensorboard import SummaryWriter
 
+# This is where a lot of the hyperparameters are, so change some stuff here
+
 hyperparameters = {
     'halfcheetah-medium-v2':         {'lr': 3e-4, 'eta': 1.0,   'max_q_backup': False,  'reward_tune': 'no',          'eval_freq': 50, 'num_epochs': 2000, 'gn': 9.0,  'top_k': 1},
     'hopper-medium-v2':              {'lr': 3e-4, 'eta': 1.0,   'max_q_backup': False,  'reward_tune': 'no',          'eval_freq': 50, 'num_epochs': 2000, 'gn': 9.0,  'top_k': 2},
@@ -43,7 +45,13 @@ hyperparameters = {
 
 def train_agent(env, state_dim, action_dim, max_action, device, output_dir, args):
     # Load buffer
-    #dataset = d4rl.qlearning_dataset(env)
+    #This is for the vanilla DQL algorithm
+
+    #dataset = d4rl.qlearning_dataset(env) 
+
+    # This is where I pick which datasets to mix
+    # I highly suggest you stick to walker2d, hopper, or halfcheetah, as everything else is way harder
+
     import mixed_dataset
     dataset = mixed_dataset.mix_datasets('walker2d-medium-v2', 'walker2d-expert-v2')
     data_sampler = Data_Sampler(dataset, device, args.reward_tune, True)
@@ -157,6 +165,9 @@ def train_agent(env, state_dim, action_dim, max_action, device, output_dir, args
 
 # Runs policy for X episodes and returns average reward
 # A fixed seed is used for the eval environment
+
+# I added this function to see how the losses of the actors compare in determining the source
+# This doesn't classify very well, but it is likely something in ql_diffusion causing this
 def eval_classifier(policy, data_sampler, batch_size):
     state, action, _, _, _, source = data_sampler.sample(batch_size)
     estimate = []
@@ -175,7 +186,8 @@ def eval_classifier(policy, data_sampler, batch_size):
     print("Confusion Matrix:")
     print(cm)
     return cm.trace()/cm.sum()
-    
+
+# This function evaluates the policy in the actual environment so you know how well it is working
 
 def eval_policy(policy, env_name, seed, eval_episodes=10):
     eval_env = gym.make(env_name)

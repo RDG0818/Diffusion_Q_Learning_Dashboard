@@ -1,7 +1,10 @@
 import d4rl
 import numpy as np
 import gym
-#TODO: Dynamically combine the datasets
+#TODO: Right now I am simply appending one dataset to another. We need to make them the same size, and be able to use different ratios
+# Ex: 1000000 state-actions - Walker2d Medium - m%
+#     1000000 state-actions - Walker2d Expert - n%
+#     1000000 state-actions - Walker2d Mixed - m/n ratio
 def mix_datasets(first_dataset_name, second_dataset_name) -> dict:
     env = gym.make(first_dataset_name)
     env2 = gym.make(second_dataset_name)

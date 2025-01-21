@@ -49,31 +49,34 @@ class Critic(nn.Module):
         q1, q2 = self.forward(state, action)
         return torch.min(q1, q2)
 
-# class Cluster:
-#     def __init__(self, n_clusters=2, batch_size=256, n_init=10):
-#         self.kmeans = MiniBatchKMeans(n_clusters=n_clusters, batch_size=batch_size, n_init=n_init)
-#         self.scalar = StandardScaler()
-#         self.cluster_centers = None
+# This is my version for on the fly clustering, used for dynamically determining where to split the dataset
+# Ex: If there is a dataset of 256 state-actions, then this can properly split it into 100-156, or 128-128, etc.
+# If you intend to use this, adjust the features method to include what you need, since this does not work rn
+class Cluster:
+    def __init__(self, n_clusters=2, batch_size=256, n_init=10):
+        self.kmeans = MiniBatchKMeans(n_clusters=n_clusters, batch_size=batch_size, n_init=n_init)
+        self.scalar = StandardScaler()
+        self.cluster_centers = None
 
-#     def features(self, state, action, next_state, q_value, bc_loss, bc_loss2):
-#         state = state.flatten().to('cpu').numpy().reshape(state.shape[0], -1)
-#         action = action.flatten().to('cpu').numpy().reshape(action.shape[0], -1)
-#         next_state = next_state.flatten().to('cpu').numpy().reshape(action.shape[0], -1)
-#         q_value = q_value.reshape(-1, 1).to('cpu').numpy()
-#         bc_loss = bc_loss.to('cpu').numpy()
-#         bc_loss2 = bc_loss2.to('cpu').numpy()
-#         return np.concatenate([state, action, next_state, q_value, bc_loss, bc_loss2], axis = 1)
+    def features(self, state, action, next_state, q_value, bc_loss, bc_loss2):
+        state = state.flatten().to('cpu').numpy().reshape(state.shape[0], -1)
+        action = action.flatten().to('cpu').numpy().reshape(action.shape[0], -1)
+        next_state = next_state.flatten().to('cpu').numpy().reshape(action.shape[0], -1)
+        q_value = q_value.reshape(-1, 1).to('cpu').numpy()
+        bc_loss = bc_loss.to('cpu').numpy()
+        bc_loss2 = bc_loss2.to('cpu').numpy()
+        return np.concatenate([state, action, next_state, q_value, bc_loss, bc_loss2], axis = 1)
 
-#     def predict(self, features):
-#         if self.cluster_centers is None: # check if cluster centers are initialized
-#             self.scalar.fit(features)
-#             scaled_features = self.scalar.transform(features)
-#             self.cluster_centers = self.kmeans.fit(scaled_features).cluster_centers_ # fit on first batch
-#         else:
-#             scaled_features = self.scalar.transform(features)
-#         prediction = self.kmeans.predict(scaled_features)
-#         self.kmeans = self.kmeans.partial_fit(scaled_features)
-#         return prediction
+    def predict(self, features):
+        if self.cluster_centers is None: # check if cluster centers are initialized
+            self.scalar.fit(features)
+            scaled_features = self.scalar.transform(features)
+            self.cluster_centers = self.kmeans.fit(scaled_features).cluster_centers_ # fit on first batch
+        else:
+            scaled_features = self.scalar.transform(features)
+        prediction = self.kmeans.predict(scaled_features)
+        self.kmeans = self.kmeans.partial_fit(scaled_features)
+        return prediction
 
 
 class Diffusion_QL(object):
@@ -99,6 +102,8 @@ class Diffusion_QL(object):
                  n_clusters=10
                  ):
 
+        # actor 1 is the main diffusion model to recieve expert data
+        # actor 2 is supposed to receive "the rest" of the dataset (i.e. medium data)
         self.model = MLP(state_dim=state_dim, action_dim=action_dim, device=device)
         self.model2 = MLP(state_dim=state_dim, action_dim=action_dim, device=device)
 
@@ -110,7 +115,6 @@ class Diffusion_QL(object):
         self.actor2_optimizer = torch.optim.Adam(self.actor2.parameters(), lr=lr)
 
         self.cluster = cluster
-        self.critic_training_time = 10e4
         self.n_clusters = n_clusters
 
         self.lr_decay = lr_decay
@@ -147,6 +151,7 @@ class Diffusion_QL(object):
         
         metric = {'bc_loss': [], 'ql_loss': [], 'actor_loss': [], 'critic_loss': []}
         for _ in range(iterations):
+            # I added source to help check accuracy of classification, do not utilize it in the actual algorithm
             state, action, next_state, reward, not_done, source = replay_buffer.sample(batch_size)
             state_copy = state.cpu().numpy().astype(np.float64)
             labels = torch.from_numpy(self.cluster.predict(state_copy)).to(self.device)
@@ -164,14 +169,19 @@ class Diffusion_QL(object):
                 loss2 = torch.mean(self.actor2.loss(action, state), dim=1).flatten()
                 a = 0
                 b = 0
+                # This was our current idea for classification, using mean (or median) of q_vals as threshold
+                # It kinda works but we want to include the losses to make the paper's approach work
                 q_vals = -a * loss1 + b * loss2 + q_vals
                 for i in range(self.n_clusters):
                     cluster_indices = indices[labels == i]
 
                     if cluster_indices.numel() > 0:  # Check for empty cluster   
+                        #This is soft scaling of critic
+                        # Ex: For actor 1, top 100% is given at step 0, top 90% is given at step n, etc. until top 50%
                         input_size = round((cluster_indices.shape[0]) / (1+self.step/250000))
                         if input_size < cluster_indices.shape[0]//2: input_size = cluster_indices.shape[0]//2
 
+                        # This indexing is very tricky, just ask me if you want to change it 
                         _, top_q_indices_indices = torch.topk(q_vals[cluster_indices], input_size)
                         _, bottom_q_indices_indices = torch.topk(q_vals[cluster_indices], input_size, largest=False)
                         top_q_indices = cluster_indices[top_q_indices_indices]
@@ -181,6 +191,8 @@ class Diffusion_QL(object):
                         medium_estimate[bottom_q_indices] = True
                 top_indices = expert_estimate
                 bottom_indices = medium_estimate
+                # This is to compare how the q value classification works against actual source
+                # Currently not logged
                 if self.step % 10000 == 0: 
                     print("Time Step:", self.step, "Q Value Classification:")
                     temp = expert_estimate.cpu().numpy().astype(np.int32)
@@ -188,6 +200,9 @@ class Diffusion_QL(object):
                     print(cm)
 
             """ Q Training """
+            # Used to update critic
+            # Possible idea is to also include the second diffusion model to contribute towards critic, or possibly create another full critic
+            # This is in one of the other branches
             current_q1, current_q2 = self.critic(state[top_indices], action[top_indices])
 
             if self.max_q_backup:
@@ -212,9 +227,8 @@ class Diffusion_QL(object):
                 critic_grad_norms = nn.utils.clip_grad_norm_(self.critic.parameters(), max_norm=self.grad_norm, norm_type=2)
             self.critic_optimizer.step()
 
-
-
             """ Policy Training """
+            # This is where the diffusion models get updated, filtered from the q values above
             bc_loss = self.actor.loss(action[top_indices], state[top_indices]).mean()
             
             bc_loss2 = self.actor2.loss(action[bottom_indices], state[bottom_indices]).mean()
@@ -229,6 +243,8 @@ class Diffusion_QL(object):
             actor_loss = bc_loss + self.eta * q_loss
             
             new_action2 = self.actor2(state[bottom_indices])
+
+            # This is adding q injection to the second diffusion model, but idk if we should or not
 
             q1_new_action2, q2_new_action2 = self.critic(state[bottom_indices], new_action2)
             if np.random.uniform() > 0.5:
