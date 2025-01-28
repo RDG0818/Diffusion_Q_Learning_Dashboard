@@ -158,7 +158,13 @@ class Diffusion_QL(object):
 
 
             """Clustering"""
+            # I would suggest to define all of this in a function so that you can use it in main.py
             with torch.no_grad():
+                if self.step % 10000 == 0:
+                    loss1 = self.actor.loss(action, state).flatten()
+                    loss2 = self.actor2.loss(action, state).flatten()
+                    for i in range(10):
+                        print(f"{source[i]}: {loss1[i]} | {loss2[i]}")
                 
                 expert_estimate = torch.zeros(batch_size, dtype=torch.bool)
                 medium_estimate = torch.zeros(batch_size, dtype=torch.bool)
@@ -189,7 +195,7 @@ class Diffusion_QL(object):
  
                         expert_estimate[top_q_indices] = True
                         medium_estimate[bottom_q_indices] = True
-                top_indices = expert_estimate
+                top_indices = expert_estimate # technically this is a mask but I don't feel like changing it
                 bottom_indices = medium_estimate
                 # This is to compare how the q value classification works against actual source
                 # Currently not logged
@@ -287,11 +293,11 @@ class Diffusion_QL(object):
 
         return metric
 
-    def sample_action(self, state):
+    def sample_action(self, state, use_second_diffusion=False):
         state = torch.FloatTensor(state.reshape(1, -1)).to(self.device)
         state_rpt = torch.repeat_interleave(state, repeats=50, dim=0)
         with torch.no_grad():
-            action = self.actor.sample(state_rpt)
+            action = self.actor.sample(state_rpt) if not use_second_diffusion else self.actor2.sample(state_rpt)
             q_value = self.critic_target.q_min(state_rpt, action).flatten()
             idx = torch.multinomial(F.softmax(q_value, dim=-1), 1)
         return action[idx].cpu().data.numpy().flatten()

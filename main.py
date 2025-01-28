@@ -18,6 +18,7 @@ from utils.logger import logger, setup_logger
 from torch.utils.tensorboard import SummaryWriter
 
 # This is where a lot of the hyperparameters are, so change some stuff here
+# If you need help with better logging just ask me about wandb
 
 hyperparameters = {
     'halfcheetah-medium-v2':         {'lr': 3e-4, 'eta': 1.0,   'max_q_backup': False,  'reward_tune': 'no',          'eval_freq': 50, 'num_epochs': 2000, 'gn': 9.0,  'top_k': 1},
@@ -57,6 +58,7 @@ def train_agent(env, state_dim, action_dim, max_action, device, output_dir, args
     data_sampler = Data_Sampler(dataset, device, args.reward_tune, True)
     utils.print_banner('Loaded buffer')
 
+    # This is a hyperparameter and requires tuning, but 8-10 works decently well on walker2d
     n_clusters = 10
     cluster = Cluster(n_clusters)
     cluster.fit(data_sampler.state)
@@ -120,12 +122,13 @@ def train_agent(env, state_dim, action_dim, max_action, device, output_dir, args
         # Evaluation
         eval_res, eval_res_std, eval_norm_res, eval_norm_res_std = eval_policy(agent, args.env_name, args.seed,
                                                                                eval_episodes=args.eval_episodes)
+        eval_res2, _, eval_norm_res2, _ = eval_policy(agent, args.env_name, args.seed, eval_episodes=args.eval_episodes,
+                                                      use_second_diffusion=True)
         
-        if curr_epoch >= 0: 
-            acc = eval_classifier(agent, data_sampler, batch_size=args.batch_size)
-        else:
-            acc = .5
-        wandb.log({"Eval": eval_res, "Norm Eval" : eval_norm_res, "Class Acc": acc})    
+
+        #acc = eval_classifier(agent, data_sampler, batch_size=args.batch_size)
+
+        wandb.log({"Eval": eval_res, "Norm Eval" : eval_norm_res, "Eval 2": eval_res2, "Norm Eval 2": eval_norm_res2})    
 
         bc_loss = np.mean(loss_metric['bc_loss'])
         if args.early_stop:
@@ -189,7 +192,7 @@ def eval_classifier(policy, data_sampler, batch_size):
 
 # This function evaluates the policy in the actual environment so you know how well it is working
 
-def eval_policy(policy, env_name, seed, eval_episodes=10):
+def eval_policy(policy, env_name, seed, eval_episodes=10, use_second_diffusion=False):
     eval_env = gym.make(env_name)
     eval_env.seed(seed + 100)
 
@@ -198,7 +201,7 @@ def eval_policy(policy, env_name, seed, eval_episodes=10):
         traj_return = 0.
         state, done = eval_env.reset(), False
         while not done:
-            action = policy.sample_action(np.array(state))
+            action = policy.sample_action(np.array(state), use_second_diffusion)
             state, reward, done, _ = eval_env.step(action)
             traj_return += reward
         scores.append(traj_return)
@@ -209,7 +212,8 @@ def eval_policy(policy, env_name, seed, eval_episodes=10):
     normalized_scores = [eval_env.get_normalized_score(s) for s in scores]
     avg_norm_score = eval_env.get_normalized_score(avg_reward)
     std_norm_score = np.std(normalized_scores)
-
+    if use_second_diffusion:
+        print("Second Actor")
     utils.print_banner(f"Evaluation over {eval_episodes} episodes: {avg_reward:.2f} {avg_norm_score:.2f}")
     return avg_reward, std_reward, avg_norm_score, std_norm_score
 
