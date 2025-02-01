@@ -45,7 +45,7 @@ def train_agent(env, state_dim, action_dim, max_action, device, output_dir, args
     # Load buffer
     #dataset = d4rl.qlearning_dataset(env)
     import mixed_dataset
-    dataset = mixed_dataset.mix_datasets('walker2d-medium-v2', 'walker2d-expert-v2')
+    dataset = mixed_dataset.mix_datasets('walker2d-random-v2', 'walker2d-expert-v2')
     data_sampler = Data_Sampler(dataset, device, args.reward_tune, True)
     utils.print_banner('Loaded buffer')
 
@@ -129,28 +129,28 @@ def train_agent(env, state_dim, action_dim, max_action, device, output_dir, args
             agent.save_model(output_dir, curr_epoch)
 
     # Model Selection: online or offline
-    scores = np.array(evaluations)
-    if args.ms == 'online':
-        best_id = np.argmax(scores[:, 2])
-        best_res = {'model selection': args.ms, 'epoch': scores[best_id, -1],
-                    'best normalized score avg': scores[best_id, 2],
-                    'best normalized score std': scores[best_id, 3],
-                    'best raw score avg': scores[best_id, 0],
-                    'best raw score std': scores[best_id, 1]}
-        with open(os.path.join(output_dir, f"best_score_{args.ms}.txt"), 'w') as f:
-            f.write(json.dumps(best_res))
-    elif args.ms == 'offline':
-        bc_loss = scores[:, 4]
-        top_k = min(len(bc_loss) - 1, args.top_k)
-        where_k = np.argsort(bc_loss) == top_k
-        best_res = {'model selection': args.ms, 'epoch': scores[where_k][0][-1],
-                    'best normalized score avg': scores[where_k][0][2],
-                    'best normalized score std': scores[where_k][0][3],
-                    'best raw score avg': scores[where_k][0][0],
-                    'best raw score std': scores[where_k][0][1]}
+    # scores = np.array(evaluations)
+    # if args.ms == 'online':
+    #     best_id = np.argmax(scores[:, 2])
+    #     best_res = {'model selection': args.ms, 'epoch': scores[best_id, -1],
+    #                 'best normalized score avg': scores[best_id, 2],
+    #                 'best normalized score std': scores[best_id, 3],
+    #                 'best raw score avg': scores[best_id, 0],
+    #                 'best raw score std': scores[best_id, 1]}
+    #     with open(os.path.join(output_dir, f"best_score_{args.ms}.txt"), 'w') as f:
+    #         f.write(json.dumps(best_res))
+    # elif args.ms == 'offline':
+    #     bc_loss = scores[:, 4]
+    #     top_k = min(len(bc_loss) - 1, args.top_k)
+    #     where_k = np.argsort(bc_loss) == top_k
+    #     best_res = {'model selection': args.ms, 'epoch': scores[where_k][0][-1],
+    #                 'best normalized score avg': scores[where_k][0][2],
+    #                 'best normalized score std': scores[where_k][0][3],
+    #                 'best raw score avg': scores[where_k][0][0],
+    #                 'best raw score std': scores[where_k][0][1]}
 
-        with open(os.path.join(output_dir, f"best_score_{args.ms}.txt"), 'w') as f:
-            f.write(json.dumps(best_res))
+    #     with open(os.path.join(output_dir, f"best_score_{args.ms}.txt"), 'w') as f:
+    #         f.write(json.dumps(best_res))
 
     # writer.close()
 

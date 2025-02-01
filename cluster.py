@@ -1,4 +1,3 @@
-from mixed_dataset import mix_datasets
 from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler
 
@@ -33,3 +32,4 @@ class Cluster:
 
         return self.predict(dataset)
     
+

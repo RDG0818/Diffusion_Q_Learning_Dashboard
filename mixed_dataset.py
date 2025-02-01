@@ -1,6 +1,7 @@
 import d4rl
 import numpy as np
 import gym
+from cluster import Cluster
 #TODO: Dynamically combine the datasets
 def mix_datasets(first_dataset_name, second_dataset_name) -> dict:
     env = gym.make(first_dataset_name)
@@ -41,3 +42,15 @@ def mix_datasets(first_dataset_name, second_dataset_name) -> dict:
 
     return combined_data
 
+if __name__ == "__main__":
+    dataset = mix_datasets('walker2d-random-v2', 'walker2d-medium-expert-v2')
+
+    n_clusters = 10
+    cluster1 = Cluster(n_clusters)
+    cluster1.fit(dataset["observations"])
+    from collections import Counter
+
+    labels = cluster1.cluster_labels(dataset["observations"])
+    cluster_counts = Counter(labels)
+
+    print(cluster_counts)

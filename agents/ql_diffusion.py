@@ -110,7 +110,7 @@ class Diffusion_QL(object):
         self.actor2_optimizer = torch.optim.Adam(self.actor2.parameters(), lr=lr)
 
         self.cluster = cluster
-        self.critic_training_time = 10e4
+        self.critic_training_time = 10e4 * 5
         self.n_clusters = n_clusters
 
         self.lr_decay = lr_decay
@@ -188,21 +188,23 @@ class Diffusion_QL(object):
                     estimate = torch.zeros(batch_size, dtype=torch.bool)
                     indices = torch.arange(batch_size).to(self.device)
                     q1, q2 = self.critic(state, action)
-                    q_vals = torch.minimum(q1, q2)
-                    for i in range(self.n_clusters):
-                        cluster_indices = indices[labels == i]
+                    q_vals = torch.minimum(q1, q2).flatten()
+                    q_mean = q_vals.mean()
+                    # for i in range(self.n_clusters):
+                    #     cluster_indices = indices[labels == i]
 
-                        if cluster_indices.numel() > 0:  # Check for empty cluster   
-                            q_mean = q_vals[cluster_indices].mean()
-                            q_indices = q_vals[cluster_indices] > q_mean
-                            q_indices = q_indices.flatten()
-                            expert_indices = cluster_indices[q_indices]  # Directly filter cluster indices
-                            estimate[expert_indices] = True
-                    top_indices = estimate
-                    bottom_indices = ~estimate
-                    if self.step % 5000 == 0: 
+                    #     if cluster_indices.numel() > 0:  # Check for empty cluster   
+                    #         q_mean = q_vals[cluster_indices].mean()
+                    #         q_indices = q_vals[cluster_indices] > q_mean
+                    #         q_indices = q_indices.flatten()
+                    #         expert_indices = cluster_indices[q_indices]  # Directly filter cluster indices
+                    #         estimate[expert_indices] = True
+                    top_indices = indices[q_vals > q_mean]
+                    bottom_indices = indices[q_vals < q_mean]
+                    if self.step % 10000 == 0: 
                         print("Time Step:", self.step)
-                        temp = estimate.cpu().numpy().astype(np.int32)
+                        temp = q_vals > q_mean
+                        temp = temp.cpu().numpy().astype(np.int32)
                         cm = confusion_matrix(source.cpu(), temp)
                         print(cm)
 
