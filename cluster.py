@@ -6,6 +6,7 @@ class Cluster:
         self.kmeans = KMeans(n_clusters=n_clusters)
         self.scaler = StandardScaler()
         self.fitted = False 
+        self.n_clusters = n_clusters
 
     def fit(self, dataset):
         """Fits the scaler and KMeans model."""

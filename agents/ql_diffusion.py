@@ -95,8 +95,7 @@ class Diffusion_QL(object):
                  lr_decay=False,
                  lr_maxt=1000,
                  grad_norm=1.0,
-                 cluster=None,
-                 n_clusters=10
+                 cluster=None
                  ):
 
         self.model = MLP(state_dim=state_dim, action_dim=action_dim, device=device)
@@ -109,9 +108,10 @@ class Diffusion_QL(object):
         self.actor_optimizer = torch.optim.Adam(self.actor.parameters(), lr=lr)
         self.actor2_optimizer = torch.optim.Adam(self.actor2.parameters(), lr=lr)
 
+
         self.cluster = cluster
         self.critic_training_time = 10e4 * 5
-        self.n_clusters = n_clusters
+        self.n_clusters = self.cluster.n_clusters if self.cluster is not None else 0
 
         self.lr_decay = lr_decay
         self.grad_norm = grad_norm
@@ -151,7 +151,8 @@ class Diffusion_QL(object):
         for _ in range(iterations):
             state, action, next_state, reward, not_done, source = replay_buffer.sample(batch_size)
             state_copy = state.cpu().numpy().astype(np.float64)
-            labels = torch.from_numpy(self.cluster.predict(state_copy)).to(self.device)
+            if self.cluster is not None:
+                labels = torch.from_numpy(self.cluster.predict(state_copy)).to(self.device)
 
             """ Q Training """
             if self.step < self.critic_training_time:
@@ -189,18 +190,23 @@ class Diffusion_QL(object):
                     indices = torch.arange(batch_size).to(self.device)
                     q1, q2 = self.critic(state, action)
                     q_vals = torch.minimum(q1, q2).flatten()
-                    q_mean = q_vals.mean()
-                    # for i in range(self.n_clusters):
-                    #     cluster_indices = indices[labels == i]
+                    
+                    if self.cluster is not None:
+                        for i in range(self.n_clusters):
+                            cluster_indices = indices[labels == i]
 
-                    #     if cluster_indices.numel() > 0:  # Check for empty cluster   
-                    #         q_mean = q_vals[cluster_indices].mean()
-                    #         q_indices = q_vals[cluster_indices] > q_mean
-                    #         q_indices = q_indices.flatten()
-                    #         expert_indices = cluster_indices[q_indices]  # Directly filter cluster indices
-                    #         estimate[expert_indices] = True
-                    top_indices = indices[q_vals > q_mean]
-                    bottom_indices = indices[q_vals < q_mean]
+                            if cluster_indices.numel() > 0:  # Check for empty cluster   
+                                q_mean = q_vals[cluster_indices].mean()
+                                q_indices = q_vals[cluster_indices] > q_mean
+                                q_indices = q_indices.flatten()
+                                expert_indices = cluster_indices[q_indices]  # Directly filter cluster indices
+                                estimate[expert_indices] = True
+                        top_indices = indices[estimate]
+                        bottom_indices = indices[~estimate]
+                    else:
+                        q_mean = q_vals.mean()
+                        top_indices = indices[q_vals > q_mean]
+                        bottom_indices = indices[q_vals < q_mean]
                     if self.step % 10000 == 0: 
                         print("Time Step:", self.step)
                         temp = q_vals > q_mean

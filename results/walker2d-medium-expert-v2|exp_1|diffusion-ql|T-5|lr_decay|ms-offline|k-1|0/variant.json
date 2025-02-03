@@ -19,6 +19,7 @@
   "max_action": 1.0,
   "max_q_backup": false,
   "ms": "offline",
+  "n_clusters": 0,
   "num_epochs": 2000,
   "num_steps_per_epoch": 1000,
   "output_dir": "results",

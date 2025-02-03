@@ -45,13 +45,15 @@ def train_agent(env, state_dim, action_dim, max_action, device, output_dir, args
     # Load buffer
     #dataset = d4rl.qlearning_dataset(env)
     import mixed_dataset
-    dataset = mixed_dataset.mix_datasets('walker2d-random-v2', 'walker2d-expert-v2')
+    dataset = mixed_dataset.mix_datasets('walker2d-medium-v2', 'walker2d-expert-v2')
     data_sampler = Data_Sampler(dataset, device, args.reward_tune, True)
     utils.print_banner('Loaded buffer')
 
-    n_clusters = 10
-    cluster = Cluster(n_clusters)
-    cluster.fit(data_sampler.state)
+    if args.n_clusters != 0:
+        cluster = Cluster(args.n_clusters)
+        cluster.fit(data_sampler.state)
+    else:
+        cluster = None
 
     if args.algo == 'ql':
         from agents.ql_diffusion import Diffusion_QL as Agent
@@ -69,8 +71,7 @@ def train_agent(env, state_dim, action_dim, max_action, device, output_dir, args
                       lr_decay=args.lr_decay,
                       lr_maxt=args.num_epochs,
                       grad_norm=args.gn,
-                      cluster=cluster,
-                      n_clusters = n_clusters)
+                      cluster=cluster)
     elif args.algo == 'bc':
         from agents.bc_diffusion import Diffusion_BC as Agent
         agent = Agent(state_dim=state_dim,
@@ -228,6 +229,7 @@ if __name__ == "__main__":
     ### Algo Choice ###
     parser.add_argument("--algo", default="ql", type=str)  # ['bc', 'ql']
     parser.add_argument("--ms", default='offline', type=str, help="['online', 'offline']")
+    parser.add_argument("--n_clusters", default=10, type=int)
     # parser.add_argument("--top_k", default=1, type=int)
 
     # parser.add_argument("--lr", default=3e-4, type=float)
