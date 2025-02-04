@@ -100,13 +100,17 @@ class Diffusion_QL(object):
 
         self.model = MLP(state_dim=state_dim, action_dim=action_dim, device=device)
         self.model2 = MLP(state_dim=state_dim, action_dim=action_dim, device=device)
+        self.model3 = MLP(state_dim=state_dim, action_dim=action_dim, device=device)
 
         self.actor = Diffusion(state_dim=state_dim, action_dim=action_dim, model=self.model, max_action=max_action,
                                beta_schedule=beta_schedule, n_timesteps=n_timesteps,).to(device)
         self.actor2 = Diffusion(state_dim=state_dim, action_dim=action_dim, model=self.model2, max_action=max_action,
                                beta_schedule=beta_schedule, n_timesteps=n_timesteps,).to(device)
+        self.actor3 = Diffusion(state_dim=state_dim, action_dim=action_dim, model=self.model3, max_action=max_action,
+                               beta_schedule=beta_schedule, n_timesteps=n_timesteps,).to(device)
         self.actor_optimizer = torch.optim.Adam(self.actor.parameters(), lr=lr)
         self.actor2_optimizer = torch.optim.Adam(self.actor2.parameters(), lr=lr)
+        self.actor3_optimizer = torch.optim.Adam(self.actor3.parameters(),  lr=lr)
 
 
         self.cluster = cluster
@@ -129,6 +133,7 @@ class Diffusion_QL(object):
         if lr_decay:
             self.actor_lr_scheduler = CosineAnnealingLR(self.actor_optimizer, T_max=lr_maxt, eta_min=0.)
             self.actor2_lr_scheduler = CosineAnnealingLR(self.actor2_optimizer, T_max=lr_maxt, eta_min=0.)
+            self.actor3_lr_scheduler = CosineAnnealingLR(self.actor3_optimizer, T_max=lr_maxt, eta_min=0.)
             self.critic_lr_scheduler = CosineAnnealingLR(self.critic_optimizer, T_max=lr_maxt, eta_min=0.)
 
         self.state_dim = state_dim
@@ -186,6 +191,8 @@ class Diffusion_QL(object):
                     top_indices = torch.arange(batch_size)
                     bottom_indices = torch.arange(batch_size)
                 else:
+                    expert_estimate = torch.zeros(batch_size, dtype=torch.bool)
+                    non_expert_estimate = torch.zeros(batch_size, dtype=torch.bool)
                     estimate = torch.zeros(batch_size, dtype=torch.bool)
                     indices = torch.arange(batch_size).to(self.device)
                     q1, q2 = self.critic(state, action)
@@ -197,57 +204,80 @@ class Diffusion_QL(object):
 
                             if cluster_indices.numel() > 0:  # Check for empty cluster   
                                 q_mean = q_vals[cluster_indices].mean()
-                                q_indices = q_vals[cluster_indices] > q_mean
-                                q_indices = q_indices.flatten()
-                                expert_indices = cluster_indices[q_indices]  # Directly filter cluster indices
-                                estimate[expert_indices] = True
-                        top_indices = indices[estimate]
-                        bottom_indices = indices[~estimate]
+                                cluster_size = cluster_indices.shape[0]
+                                q_indices = cluster_indices[q_vals[cluster_indices] > q_mean]
+                                _, cluster_q_indices = torch.topk(q_vals[cluster_indices], int(cluster_size * .5))
+                                _, cluster_q_bottom_indices = torch.topk(q_vals[cluster_indices], int(cluster_size * .5), largest=False)
+                                expert_indices = cluster_indices[cluster_q_indices]  # Directly filter cluster indices
+                                non_expert_indices = cluster_indices[cluster_q_bottom_indices]
+                                expert_estimate[expert_indices] = True
+                                non_expert_estimate[non_expert_indices] = True
+                                estimate[q_indices] = True
+
+                        top_indices = indices[expert_estimate]
+                        bottom_indices = indices[non_expert_estimate]
                     else:
                         q_mean = q_vals.mean()
                         top_indices = indices[q_vals > q_mean]
                         bottom_indices = indices[q_vals < q_mean]
+                    
                     if self.step % 10000 == 0: 
                         print("Time Step:", self.step)
-                        temp = q_vals > q_mean
+                        temp = q_vals > q_mean if self.cluster is None else estimate
                         temp = temp.cpu().numpy().astype(np.int32)
                         cm = confusion_matrix(source.cpu(), temp)
                         print(cm)
 
 
             """ Policy Training """
-            bc_loss = self.actor.loss(action[top_indices], state[top_indices]).mean()
-            
-            bc_loss2 = self.actor2.loss(action[bottom_indices], state[bottom_indices]).mean()
 
-            new_action = self.actor(state[top_indices])
+            if self.step < self.critic_training_time:
+                bc_loss = self.actor.loss(action, state).mean()
+                new_action = self.actor(state)
+                q1_new_action, q2_new_action = self.critic(state, new_action)
+                if np.random.uniform() > 0.5:
+                    q_loss = - q1_new_action.mean() / q2_new_action.abs().mean().detach()
+                else:
+                    q_loss = - q2_new_action.mean() / q1_new_action.abs().mean().detach()
+                actor_loss = bc_loss + self.eta * q_loss
+                if self.grad_norm > 0:
+                    actor_grad_norms = nn.utils.clip_grad_norm_(self.actor.parameters(), max_norm=self.grad_norm, norm_type=2)
 
-            q1_new_action, q2_new_action = self.critic(state[top_indices], new_action)
-            if np.random.uniform() > 0.5:
-                q_loss = - q1_new_action.mean() / q2_new_action.abs().mean().detach()
+                self.actor_optimizer.zero_grad()
+                actor_loss.backward()
+                self.actor_optimizer.step()
             else:
-                q_loss = - q2_new_action.mean() / q1_new_action.abs().mean().detach()
-            actor_loss = bc_loss + self.eta * q_loss
+                bc_loss2 = self.actor2.loss(action[top_indices], state[top_indices]).mean()
+                bc_loss3 = self.actor3.loss(action[bottom_indices], state[bottom_indices]).mean()
+                
+                new_action2 = self.actor2(state[top_indices])
+
+                q1_new_action2, q2_new_action2 = self.critic(state[top_indices], new_action2)
+                if np.random.uniform() > 0.5:
+                    q_loss2 = - q1_new_action2.mean() / q2_new_action2.abs().mean().detach()
+                else:
+                    q_loss2 = - q2_new_action2.mean() / q1_new_action2.abs().mean().detach()
+                actor2_loss = bc_loss2 + self.eta * q_loss2 
+
+                new_action3 = self.actor3(state[bottom_indices])
+
+                q1_new_action3, q2_new_action3 = self.critic(state[bottom_indices], new_action3)
+                if np.random.uniform() > 0.5:
+                    q_loss3 = - q1_new_action3.mean() / q2_new_action3.abs().mean().detach()
+                else:
+                    q_loss3 = - q2_new_action3.mean() / q1_new_action3.abs().mean().detach()
+                actor3_loss = bc_loss3 - self.eta * q_loss3
+
+                if self.grad_norm > 0: 
+                    actor2_grad_norms = nn.utils.clip_grad_norm_(self.actor2.parameters(), max_norm=self.grad_norm, norm_type=2)
+                
+                self.actor2_optimizer.zero_grad()
+                self.actor3_optimizer.zero_grad()
+                actor2_loss.backward()
+                actor3_loss.backward()
+                self.actor2_optimizer.step()
+                self.actor3_optimizer.step()
             
-            new_action2 = self.actor2(state[bottom_indices])
-
-            q1_new_action2, q2_new_action2 = self.critic(state[bottom_indices], new_action2)
-            if np.random.uniform() > 0.5:
-                q_loss2 = - q1_new_action2.mean() / q2_new_action2.abs().mean().detach()
-            else:
-                q_loss2 = - q2_new_action2.mean() / q1_new_action2.abs().mean().detach()
-            actor2_loss = bc_loss2 + self.eta * q_loss2 
-
-            self.actor_optimizer.zero_grad()
-            self.actor2_optimizer.zero_grad()
-            actor_loss.backward()
-            actor2_loss.backward()
-            if self.grad_norm > 0: 
-                actor_grad_norms = nn.utils.clip_grad_norm_(self.actor.parameters(), max_norm=self.grad_norm, norm_type=2)
-                actor2_grad_norms = nn.utils.clip_grad_norm_(self.actor2.parameters(), max_norm=self.grad_norm, norm_type=2)
-            self.actor_optimizer.step()
-            self.actor2_optimizer.step()
-
             """ Step Target network """
             if self.step % self.update_ema_every == 0 and self.step < self.critic_training_time:
                 self.step_ema()
@@ -260,10 +290,9 @@ class Diffusion_QL(object):
 
             """ Log """
             
-
-            metric['actor_loss'].append(actor_loss.item())
-            metric['bc_loss'].append(bc_loss.item())
-            metric['ql_loss'].append(q_loss.item())
+            if self.step < self.critic_training_time: metric['actor_loss'].append(actor_loss.item())
+            if self.step < self.critic_training_time: metric['bc_loss'].append(bc_loss.item())
+            if self.step < self.critic_training_time: metric['ql_loss'].append(q_loss.item())
             if self.step < self.critic_training_time: metric['critic_loss'].append(critic_loss.item())
 
         if self.lr_decay: 
@@ -276,7 +305,7 @@ class Diffusion_QL(object):
         state = torch.FloatTensor(state.reshape(1, -1)).to(self.device)
         state_rpt = torch.repeat_interleave(state, repeats=50, dim=0)
         with torch.no_grad():
-            action = self.actor.sample(state_rpt)
+            action = self.actor.sample(state_rpt) if self.step < self.critic_training_time else self.actor2.sample(state_rpt)
             q_value = self.critic_target.q_min(state_rpt, action).flatten()
             idx = torch.multinomial(F.softmax(q_value, dim=-1), 1)
         return action[idx].cpu().data.numpy().flatten()
@@ -285,8 +314,8 @@ class Diffusion_QL(object):
         state = torch.FloatTensor(state.reshape(1, -1)).to(self.device)
         state_rpt = torch.repeat_interleave(state, repeats=50, dim=0)
         with torch.no_grad():
-            action = self.actor.sample(state_rpt)
-            q_value = self.critic_target.q_min(state_rpt, action).flatten()
+            action = self.actor2.sample(state_rpt)
+            q_value = self.critic.q_min(state_rpt, action).flatten()
             idx = torch.multinomial(F.softmax(q_value, dim=-1), 1)
         return action[idx].cpu()
 
@@ -294,8 +323,8 @@ class Diffusion_QL(object):
         state = torch.FloatTensor(state.reshape(1, -1)).to(self.device)
         state_rpt = torch.repeat_interleave(state, repeats=50, dim=0)
         with torch.no_grad():
-            action = self.actor2.sample(state_rpt)
-            q_value = self.critic_target.q_min(state_rpt, action).flatten()
+            action = self.actor3.sample(state_rpt)
+            q_value = self.critic.q_min(state_rpt, action).flatten()
             idx = torch.multinomial(F.softmax(q_value, dim=-1), 1)
         return action[idx].cpu()
     
