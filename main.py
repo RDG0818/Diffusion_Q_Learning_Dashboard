@@ -45,7 +45,7 @@ def train_agent(env, state_dim, action_dim, max_action, device, output_dir, args
     # Load buffer
     #dataset = d4rl.qlearning_dataset(env)
     import mixed_dataset
-    dataset = mixed_dataset.mix_datasets('walker2d-medium-v2', 'walker2d-expert-v2')
+    dataset = mixed_dataset.mix_datasets('hopper-medium-v2', 'hopper-expert-v2')
     data_sampler = Data_Sampler(dataset, device, args.reward_tune, True)
     utils.print_banner('Loaded buffer')
 
@@ -114,11 +114,8 @@ def train_agent(env, state_dim, action_dim, max_action, device, output_dir, args
         eval_res, eval_res_std, eval_norm_res, eval_norm_res_std = eval_policy(agent, args.env_name, args.seed,
                                                                                eval_episodes=args.eval_episodes)
         
-        if curr_epoch >= 0: 
-            acc = eval_classifier(agent, data_sampler, batch_size=args.batch_size)
-        else:
-            acc = .5
-        wandb.log({"Eval": eval_res, "Norm Eval" : eval_norm_res, "Class Acc": acc})    
+
+        wandb.log({"Eval": eval_res, "Norm Eval" : eval_norm_res, "Class Acc": np.mean(loss_metric['q_value_accuracy'])})    
 
         bc_loss = np.mean(loss_metric['bc_loss'])
         if args.early_stop:
