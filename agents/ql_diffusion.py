@@ -99,10 +99,15 @@ class Diffusion_QL(object):
                  ):
 
         self.model = MLP(state_dim=state_dim, action_dim=action_dim, device=device)
+        #self.model2 = MLP(state_dim=state_dim, action_dim=action_dim, device=device)
 
         self.actor = Diffusion(state_dim=state_dim, action_dim=action_dim, model=self.model, max_action=max_action,
                                beta_schedule=beta_schedule, n_timesteps=n_timesteps,).to(device)
+        #self.actor2 = Diffusion(state_dim=state_dim, action_dim=action_dim, model=self.model, max_action=max_action,
+        #                       beta_schedule=beta_schedule, n_timesteps=n_timesteps,).to(device)
+         
         self.actor_optimizer = torch.optim.Adam(self.actor.parameters(), lr=lr)
+        #self.actor2_optimizer = torch.optim.Adam(self.actor.parameters(), lr=lr)
 
         self.cluster = cluster
         self.critic_training_time = 10e4 * 5
@@ -123,6 +128,7 @@ class Diffusion_QL(object):
 
         if lr_decay:
             self.actor_lr_scheduler = CosineAnnealingLR(self.actor_optimizer, T_max=lr_maxt, eta_min=0.)
+            # self.actor2_lr_scheduler = CosineAnnealingLR(self.actor2_optimizer, T_max=lr_maxt, eta_min=0.)
             self.critic_lr_scheduler = CosineAnnealingLR(self.critic_optimizer, T_max=lr_maxt, eta_min=0.)
 
         self.state_dim = state_dim
@@ -186,7 +192,7 @@ class Diffusion_QL(object):
                         cluster_indices = indices[labels == i]
 
                         if cluster_indices.numel() > 0:  # Check for empty cluster   
-                            q_mean = q_vals[cluster_indices].mean()
+                            q_mean = q_vals[cluster_indices].mean() # Make this work for any ratio of expert : non_expert
                             q_indices = cluster_indices[q_vals[cluster_indices] > q_mean]
                             estimate[q_indices] = True
                 
@@ -201,8 +207,7 @@ class Diffusion_QL(object):
 
 
             """ Policy Training """
-
-
+            # Actor 1 Training
             bc_loss = self.actor.loss(action, state).mean()
             new_action = self.actor(state)
             q1_new_action, q2_new_action = self.critic(state, new_action)
@@ -218,7 +223,28 @@ class Diffusion_QL(object):
             actor_loss.backward()
             self.actor_optimizer.step()
             
+            # Actor 2 Training
+            '''
+            bc_loss2 = self.actor2.loss(action[estimate], state[estimate]).mean()
             
+            new_action2 = self.actor2(state)
+            q1_new_action2, q2_new_action2 = self.critic(state, new_action2)
+
+            if np.random.uniform() > 0.5:
+                q_loss2 = - q1_new_action2.mean() / q2_new_action2.abs().mean().detach()
+            else:
+                q_loss2 = - q2_new_action2.mean() / q1_new_action2.abs().mean().detach()
+            actor2_loss = bc_loss2 + self.eta * q_loss2
+            if self.grad_norm > 0:
+                actor2_grad_norms = nn.utils.clip_grad_norm_(self.actor2.parameters(), max_norm=self.grad_norm, norm_type=2)
+
+            self.actor2_optimizer.zero_grad()new_action = self.actor(state)
+            
+            actor2_loss.backward()
+            self.actor2_optimizer.step()
+
+            '''
+
             """ Step Target network """
             if self.step % self.update_ema_every == 0:
                 self.step_ema()
@@ -238,6 +264,7 @@ class Diffusion_QL(object):
 
         if self.lr_decay: 
             self.actor_lr_scheduler.step()
+            #self.actor2_lr_scheduler.step()
             self.critic_lr_scheduler.step()
 
         return metric
