@@ -12,6 +12,7 @@ from sklearn.cluster import KMeans, MiniBatchKMeans
 from sklearn.preprocessing import StandardScaler
 from sklearn.preprocessing import RobustScaler
 from sklearn.metrics import confusion_matrix
+import math
 
 from agents.diffusion import Diffusion
 from agents.model import MLP
@@ -99,15 +100,15 @@ class Diffusion_QL(object):
                  ):
 
         self.model = MLP(state_dim=state_dim, action_dim=action_dim, device=device)
-        #self.model2 = MLP(state_dim=state_dim, action_dim=action_dim, device=device)
+        self.model2 = MLP(state_dim=state_dim, action_dim=action_dim, device=device)
 
         self.actor = Diffusion(state_dim=state_dim, action_dim=action_dim, model=self.model, max_action=max_action,
                                beta_schedule=beta_schedule, n_timesteps=n_timesteps,).to(device)
-        #self.actor2 = Diffusion(state_dim=state_dim, action_dim=action_dim, model=self.model, max_action=max_action,
-        #                       beta_schedule=beta_schedule, n_timesteps=n_timesteps,).to(device)
+        self.actor2 = Diffusion(state_dim=state_dim, action_dim=action_dim, model=self.model, max_action=max_action,
+                               beta_schedule=beta_schedule, n_timesteps=n_timesteps,).to(device)
          
         self.actor_optimizer = torch.optim.Adam(self.actor.parameters(), lr=lr)
-        #self.actor2_optimizer = torch.optim.Adam(self.actor.parameters(), lr=lr)
+        self.actor2_optimizer = torch.optim.Adam(self.actor.parameters(), lr=lr)
 
         self.cluster = cluster
         self.critic_training_time = 10e4 * 5
@@ -128,7 +129,7 @@ class Diffusion_QL(object):
 
         if lr_decay:
             self.actor_lr_scheduler = CosineAnnealingLR(self.actor_optimizer, T_max=lr_maxt, eta_min=0.)
-            # self.actor2_lr_scheduler = CosineAnnealingLR(self.actor2_optimizer, T_max=lr_maxt, eta_min=0.)
+            self.actor2_lr_scheduler = CosineAnnealingLR(self.actor2_optimizer, T_max=lr_maxt, eta_min=0.)
             self.critic_lr_scheduler = CosineAnnealingLR(self.critic_optimizer, T_max=lr_maxt, eta_min=0.)
 
         self.state_dim = state_dim
@@ -183,6 +184,7 @@ class Diffusion_QL(object):
             """Clustering"""
             with torch.no_grad():
                 estimate = torch.zeros(batch_size, dtype=torch.bool)
+                annealing_estimate = estimate
                 indices = torch.arange(batch_size).to(self.device)
                 q1, q2 = self.critic(state, action)
                 q_vals = torch.minimum(q1, q2).flatten()
@@ -194,7 +196,10 @@ class Diffusion_QL(object):
                         if cluster_indices.numel() > 0:  # Check for empty cluster   
                             q_mean = q_vals[cluster_indices].mean() # Make this work for any ratio of expert : non_expert
                             q_indices = cluster_indices[q_vals[cluster_indices] > q_mean]
+                            high_q_value_amount = (self.step / 250e3) * 0.6 if self.step < 250e3 else 0.6
+                            _, annealing_indices = torch.topk(q_vals[cluster_indices], round(high_q_value_amount * cluster_indices.shape[0]))
                             estimate[q_indices] = True
+                            annealing_estimate[cluster_indices[annealing_indices]] = True
                 
                 
                 temp = q_vals > q_vals.mean() if self.cluster is None else estimate
@@ -203,6 +208,8 @@ class Diffusion_QL(object):
                 metric['q_value_accuracy'].append((cm[0][0]+cm[1][1])/batch_size)
                 if self.step % 10000 == 0:
                     print("Time Step:", self.step)
+                    print("Percent given to model:", round(high_q_value_amount, 4))
+                    #print("Percent of expert:", torch.sum(annealing_estimate & source)/torch.sum(source))
                     print(cm)
 
 
@@ -224,8 +231,8 @@ class Diffusion_QL(object):
             self.actor_optimizer.step()
             
             # Actor 2 Training
-            '''
-            bc_loss2 = self.actor2.loss(action[estimate], state[estimate]).mean()
+            
+            bc_loss2 = self.actor2.loss(action[annealing_estimate], state[annealing_estimate]).mean()
             
             new_action2 = self.actor2(state)
             q1_new_action2, q2_new_action2 = self.critic(state, new_action2)
@@ -238,12 +245,11 @@ class Diffusion_QL(object):
             if self.grad_norm > 0:
                 actor2_grad_norms = nn.utils.clip_grad_norm_(self.actor2.parameters(), max_norm=self.grad_norm, norm_type=2)
 
-            self.actor2_optimizer.zero_grad()new_action = self.actor(state)
-            
+            self.actor2_optimizer.zero_grad()          
             actor2_loss.backward()
             self.actor2_optimizer.step()
 
-            '''
+            
 
             """ Step Target network """
             if self.step % self.update_ema_every == 0:
@@ -264,7 +270,7 @@ class Diffusion_QL(object):
 
         if self.lr_decay: 
             self.actor_lr_scheduler.step()
-            #self.actor2_lr_scheduler.step()
+            self.actor2_lr_scheduler.step()
             self.critic_lr_scheduler.step()
 
         return metric
@@ -273,28 +279,10 @@ class Diffusion_QL(object):
         state = torch.FloatTensor(state.reshape(1, -1)).to(self.device)
         state_rpt = torch.repeat_interleave(state, repeats=50, dim=0)
         with torch.no_grad():
-            action = self.actor.sample(state_rpt)
+            action = self.actor2.sample(state_rpt)
             q_value = self.critic_target.q_min(state_rpt, action).flatten()
             idx = torch.multinomial(F.softmax(q_value, dim=-1), 1)
         return action[idx].cpu().data.numpy().flatten()
-    
-    def sample_action_tensor(self, state):
-        state = torch.FloatTensor(state.reshape(1, -1)).to(self.device)
-        state_rpt = torch.repeat_interleave(state, repeats=50, dim=0)
-        with torch.no_grad():
-            action = self.actor2.sample(state_rpt)
-            q_value = self.critic.q_min(state_rpt, action).flatten()
-            idx = torch.multinomial(F.softmax(q_value, dim=-1), 1)
-        return action[idx].cpu()
-
-    def sample_action_tensor2(self, state):
-        state = torch.FloatTensor(state.reshape(1, -1)).to(self.device)
-        state_rpt = torch.repeat_interleave(state, repeats=50, dim=0)
-        with torch.no_grad():
-            action = self.actor3.sample(state_rpt)
-            q_value = self.critic.q_min(state_rpt, action).flatten()
-            idx = torch.multinomial(F.softmax(q_value, dim=-1), 1)
-        return action[idx].cpu()
     
     def save_model(self, dir, id=None):
         if id is not None:
