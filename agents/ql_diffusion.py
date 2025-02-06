@@ -104,14 +104,14 @@ class Diffusion_QL(object):
 
         self.actor = Diffusion(state_dim=state_dim, action_dim=action_dim, model=self.model, max_action=max_action,
                                beta_schedule=beta_schedule, n_timesteps=n_timesteps,).to(device)
-        self.actor2 = Diffusion(state_dim=state_dim, action_dim=action_dim, model=self.model, max_action=max_action,
+        self.actor2 = Diffusion(state_dim=state_dim, action_dim=action_dim, model=self.model2, max_action=max_action,
                                beta_schedule=beta_schedule, n_timesteps=n_timesteps,).to(device)
          
         self.actor_optimizer = torch.optim.Adam(self.actor.parameters(), lr=lr)
         self.actor2_optimizer = torch.optim.Adam(self.actor.parameters(), lr=lr)
 
         self.cluster = cluster
-        self.critic_training_time = 10e4 * 5
+        self.critic_training_time = 250000
         self.n_clusters = self.cluster.n_clusters if self.cluster is not None else 0
 
         self.lr_decay = lr_decay
@@ -196,7 +196,7 @@ class Diffusion_QL(object):
                         if cluster_indices.numel() > 0:  # Check for empty cluster   
                             q_mean = q_vals[cluster_indices].mean() # Make this work for any ratio of expert : non_expert
                             q_indices = cluster_indices[q_vals[cluster_indices] > q_mean]
-                            high_q_value_amount = (self.step / 250e3) * 0.6 if self.step < 250e3 else 0.6
+                            high_q_value_amount = (self.step / 250e3) * 0.5 if self.step < 250e3 else 0.5
                             _, annealing_indices = torch.topk(q_vals[cluster_indices], round(high_q_value_amount * cluster_indices.shape[0]))
                             estimate[q_indices] = True
                             annealing_estimate[cluster_indices[annealing_indices]] = True
@@ -231,7 +231,6 @@ class Diffusion_QL(object):
             self.actor_optimizer.step()
             
             # Actor 2 Training
-            
             bc_loss2 = self.actor2.loss(action[annealing_estimate], state[annealing_estimate]).mean()
             
             new_action2 = self.actor2(state)
