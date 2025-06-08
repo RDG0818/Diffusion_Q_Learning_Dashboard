@@ -7,9 +7,7 @@ import numpy as np
 import os
 import torch
 import json
-from cluster import Cluster
 from sklearn.metrics import confusion_matrix
-import wandb
 
 import d4rl
 from utils import utils
@@ -18,16 +16,18 @@ from utils.logger import logger, setup_logger
 from torch.utils.tensorboard import SummaryWriter
 
 hyperparameters = {
-    'halfcheetah-medium-v2':         {'lr': 3e-4, 'eta': 1.0,   'max_q_backup': False,  'reward_tune': 'no',          'eval_freq': 50, 'num_epochs': 2000, 'gn': 9.0,  'top_k': 1},
-    'hopper-medium-v2':              {'lr': 3e-4, 'eta': 1.0,   'max_q_backup': False,  'reward_tune': 'no',          'eval_freq': 50, 'num_epochs': 2000, 'gn': 9.0,  'top_k': 2},
-    'walker2d-medium-v2':            {'lr': 3e-4, 'eta': 1.0,   'max_q_backup': False,  'reward_tune': 'no',          'eval_freq': 50, 'num_epochs': 2000, 'gn': 1.0,  'top_k': 1},
-    'halfcheetah-medium-replay-v2':  {'lr': 3e-4, 'eta': 1.0,   'max_q_backup': False,  'reward_tune': 'no',          'eval_freq': 50, 'num_epochs': 2000, 'gn': 2.0,  'top_k': 0},
-    'hopper-medium-replay-v2':       {'lr': 3e-4, 'eta': 1.0,   'max_q_backup': False,  'reward_tune': 'no',          'eval_freq': 50, 'num_epochs': 2000, 'gn': 4.0,  'top_k': 2},
-    'walker2d-medium-replay-v2':     {'lr': 3e-4, 'eta': 1.0,   'max_q_backup': False,  'reward_tune': 'no',          'eval_freq': 50, 'num_epochs': 2000, 'gn': 4.0,  'top_k': 1},
-    'halfcheetah-medium-expert-v2':  {'lr': 3e-4, 'eta': 1.0,   'max_q_backup': False,  'reward_tune': 'no',          'eval_freq': 10, 'num_epochs': 2000, 'gn': 7.0,  'top_k': 0},
-    'hopper-medium-expert-v2':       {'lr': 3e-4, 'eta': 1.0,   'max_q_backup': False,  'reward_tune': 'no',          'eval_freq': 10, 'num_epochs': 2000, 'gn': 5.0,  'top_k': 2},
-    'walker2d-medium-expert-v2':     {'lr': 3e-4, 'eta': 1.0,   'max_q_backup': False,  'reward_tune': 'no',          'eval_freq': 10, 'num_epochs': 2000, 'gn': 5.0,  'top_k': 1},
-    'walker2d-expert-v2':            {'lr': 3e-4, 'eta': 1.0,   'max_q_backup': False,  'reward_tune': 'no',          'eval_freq': 50, 'num_epochs': 2000, 'gn': 5.0,  'top_k': 1},
+    'halfcheetah-medium-v2':         {'lr': 3e-4, 'eta': 1.0,   'max_q_backup': False,  'reward_tune': 'no',          'eval_freq': 2, 'num_epochs': 100, 'gn': 9.0,  'top_k': 1},
+    'hopper-medium-v2':              {'lr': 3e-4, 'eta': 1.0,   'max_q_backup': False,  'reward_tune': 'no',          'eval_freq': 2, 'num_epochs': 100, 'gn': 9.0,  'top_k': 2},
+    'walker2d-medium-v2':            {'lr': 3e-4, 'eta': 1.0,   'max_q_backup': False,  'reward_tune': 'no',          'eval_freq': 2, 'num_epochs': 100, 'gn': 1.0,  'top_k': 1},
+    'halfcheetah-medium-replay-v2':  {'lr': 3e-4, 'eta': 1.0,   'max_q_backup': False,  'reward_tune': 'no',          'eval_freq': 2, 'num_epochs': 100, 'gn': 2.0,  'top_k': 0},
+    'hopper-medium-replay-v2':       {'lr': 3e-4, 'eta': 1.0,   'max_q_backup': False,  'reward_tune': 'no',          'eval_freq': 2, 'num_epochs': 100, 'gn': 4.0,  'top_k': 2},
+    'walker2d-medium-replay-v2':     {'lr': 3e-4, 'eta': 1.0,   'max_q_backup': False,  'reward_tune': 'no',          'eval_freq': 2, 'num_epochs': 100, 'gn': 4.0,  'top_k': 1},
+    'halfcheetah-medium-expert-v2':  {'lr': 3e-4, 'eta': 1.0,   'max_q_backup': False,  'reward_tune': 'no',          'eval_freq': 2, 'num_epochs': 100, 'gn': 7.0,  'top_k': 0},
+    'hopper-medium-expert-v2':       {'lr': 3e-4, 'eta': 1.0,   'max_q_backup': False,  'reward_tune': 'no',          'eval_freq': 2, 'num_epochs': 100, 'gn': 5.0,  'top_k': 2},
+    'walker2d-medium-expert-v2':     {'lr': 3e-4, 'eta': 1.0,   'max_q_backup': False,  'reward_tune': 'no',          'eval_freq': 2, 'num_epochs': 100, 'gn': 5.0,  'top_k': 1},
+    'halfcheetah-expert-v2':         {'lr': 3e-4, 'eta': 1.0,   'max_q_backup': False,  'reward_tune': 'no',          'eval_freq': 2, 'num_epochs': 100, 'gn': 7.0,  'top_k': 0},
+    'hopper-expert-v2':              {'lr': 3e-4, 'eta': 1.0,   'max_q_backup': False,  'reward_tune': 'no',          'eval_freq': 2, 'num_epochs': 100, 'gn': 5.0,  'top_k': 2},
+    'walker2d-expert-v2':            {'lr': 3e-4, 'eta': 1.0,   'max_q_backup': False,  'reward_tune': 'no',          'eval_freq': 2, 'num_epochs': 100, 'gn': 5.0,  'top_k': 1},
     'antmaze-umaze-v0':              {'lr': 3e-4, 'eta': 0.5,   'max_q_backup': False,  'reward_tune': 'cql_antmaze', 'eval_freq': 50, 'num_epochs': 1000, 'gn': 2.0,  'top_k': 2},
     'antmaze-umaze-diverse-v0':      {'lr': 3e-4, 'eta': 2.0,   'max_q_backup': True,   'reward_tune': 'cql_antmaze', 'eval_freq': 50, 'num_epochs': 1000, 'gn': 3.0,  'top_k': 2},
     'antmaze-medium-play-v0':        {'lr': 1e-3, 'eta': 2.0,   'max_q_backup': True,   'reward_tune': 'cql_antmaze', 'eval_freq': 50, 'num_epochs': 1000, 'gn': 2.0,  'top_k': 1},
@@ -43,17 +43,15 @@ hyperparameters = {
 
 def train_agent(env, state_dim, action_dim, max_action, device, output_dir, args):
     # Load buffer
-    #dataset = d4rl.qlearning_dataset(env)
-    import mixed_dataset
-    dataset = mixed_dataset.mix_datasets('walker2d-medium-v2', 'walker2d-expert-v2')
-    data_sampler = Data_Sampler(dataset, device, args.reward_tune, True)
+    dataset = d4rl.qlearning_dataset(env)
+    # import utils.mix_dataset
+    # dataset_configs = [
+    #     ('hopper-medium-v2', 0.5),
+    #     ('hopper-expert-v2', 0.5),
+    # ]
+    # dataset = mixed_dataset.mix_datasets(dataset_configs)
+    data_sampler = Data_Sampler(dataset, device, args.reward_tune, mixed_data=False)
     utils.print_banner('Loaded buffer')
-
-    if args.n_clusters != 0:
-        cluster = Cluster(args.n_clusters)
-        cluster.fit(data_sampler.state)
-    else:
-        cluster = None
 
     if args.algo == 'ql':
         from agents.ql_diffusion import Diffusion_QL as Agent
@@ -71,7 +69,7 @@ def train_agent(env, state_dim, action_dim, max_action, device, output_dir, args
                       lr_decay=args.lr_decay,
                       lr_maxt=args.num_epochs,
                       grad_norm=args.gn,
-                      cluster=cluster)
+                      )
     elif args.algo == 'bc':
         from agents.bc_diffusion import Diffusion_BC as Agent
         agent = Agent(state_dim=state_dim,
@@ -98,24 +96,34 @@ def train_agent(env, state_dim, action_dim, max_action, device, output_dir, args
         loss_metric = agent.train(data_sampler,
                                   iterations=iterations,
                                   batch_size=args.batch_size,
+                                  sequence_length=args.sequence_length,
                                   log_writer=writer)
         training_iters += iterations
         curr_epoch = int(training_iters // int(args.num_steps_per_epoch))
 
         # Logging
         utils.print_banner(f"Train step: {training_iters}", separator="*", num_star=90)
-        print('Trained Epochs', curr_epoch)
-        print('BC Loss', np.mean(loss_metric['bc_loss']))
-        print('QL Loss', np.mean(loss_metric['ql_loss']))
-        print('Actor Loss', np.mean(loss_metric['actor_loss']))
-        print('Critic Loss', np.mean(loss_metric['critic_loss']))
+        logger.record_tabular('Trained Epochs', curr_epoch)
+        logger.record_tabular('BC Loss', np.mean(loss_metric['bc_loss']))
+        logger.record_tabular('QL Loss', np.mean(loss_metric['ql_loss']))
+        logger.record_tabular('Actor Loss', np.mean(loss_metric['actor_loss']))
+        logger.record_tabular('Critic Loss', np.mean(loss_metric['critic_loss']))
+        logger.dump_tabular()
 
         # Evaluation
         eval_res, eval_res_std, eval_norm_res, eval_norm_res_std = eval_policy(agent, args.env_name, args.seed,
                                                                                eval_episodes=args.eval_episodes)
         
 
-        wandb.log({"Eval": eval_res, "Norm Eval" : eval_norm_res, "Class Acc": np.mean(loss_metric['q_value_accuracy'])})    
+        evaluations.append([eval_res, eval_res_std, eval_norm_res, eval_norm_res_std,
+                            np.mean(loss_metric['bc_loss']), np.mean(loss_metric['ql_loss']),
+                            np.mean(loss_metric['actor_loss']), np.mean(loss_metric['critic_loss']),
+                            curr_epoch])
+        np.save(os.path.join(output_dir, "eval"), evaluations)
+        logger.record_tabular('Average Episodic Reward', eval_res)
+        logger.record_tabular('Average Episodic N-Reward', eval_norm_res)
+        logger.dump_tabular()
+     
 
         bc_loss = np.mean(loss_metric['bc_loss'])
         if args.early_stop:
@@ -125,32 +133,6 @@ def train_agent(env, state_dim, action_dim, max_action, device, output_dir, args
 
         if args.save_best_model:
             agent.save_model(output_dir, curr_epoch)
-
-    # Model Selection: online or offline
-    # scores = np.array(evaluations)
-    # if args.ms == 'online':
-    #     best_id = np.argmax(scores[:, 2])
-    #     best_res = {'model selection': args.ms, 'epoch': scores[best_id, -1],
-    #                 'best normalized score avg': scores[best_id, 2],
-    #                 'best normalized score std': scores[best_id, 3],
-    #                 'best raw score avg': scores[best_id, 0],
-    #                 'best raw score std': scores[best_id, 1]}
-    #     with open(os.path.join(output_dir, f"best_score_{args.ms}.txt"), 'w') as f:
-    #         f.write(json.dumps(best_res))
-    # elif args.ms == 'offline':
-    #     bc_loss = scores[:, 4]
-    #     top_k = min(len(bc_loss) - 1, args.top_k)
-    #     where_k = np.argsort(bc_loss) == top_k
-    #     best_res = {'model selection': args.ms, 'epoch': scores[where_k][0][-1],
-    #                 'best normalized score avg': scores[where_k][0][2],
-    #                 'best normalized score std': scores[where_k][0][3],
-    #                 'best raw score avg': scores[where_k][0][0],
-    #                 'best raw score std': scores[where_k][0][1]}
-
-    #     with open(os.path.join(output_dir, f"best_score_{args.ms}.txt"), 'w') as f:
-    #         f.write(json.dumps(best_res))
-
-    # writer.close()
 
 
 # Runs policy for X episodes and returns average reward
@@ -205,13 +187,14 @@ if __name__ == "__main__":
     ### Experimental Setups ###
     parser.add_argument("--exp", default='exp_1', type=str)                    # Experiment ID
     parser.add_argument('--device', default=0, type=int)                       # device, {"cpu", "cuda", "cuda:0", "cuda:1"}, etc
-    parser.add_argument("--env_name", default="walker2d-medium-expert-v2", type=str)  # OpenAI gym environment name
+    parser.add_argument("--env_name", default="halfcheetah-medium-expert-v2", type=str)  # OpenAI gym environment name
     parser.add_argument("--dir", default="results", type=str)                    # Logging directory
     parser.add_argument("--seed", default=0, type=int)                         # Sets Gym, PyTorch and Numpy seeds
     parser.add_argument("--num_steps_per_epoch", default=1000, type=int)
 
     ### Optimization Setups ###
     parser.add_argument("--batch_size", default=512, type=int)
+    parser.add_argument("--sequence_length", default=16, type=int)
     parser.add_argument("--lr_decay", action='store_true')
     parser.add_argument('--early_stop', action='store_true')
     parser.add_argument('--save_best_model', action='store_true')
@@ -226,7 +209,6 @@ if __name__ == "__main__":
     ### Algo Choice ###
     parser.add_argument("--algo", default="ql", type=str)  # ['bc', 'ql']
     parser.add_argument("--ms", default='offline', type=str, help="['online', 'offline']")
-    parser.add_argument("--n_clusters", default=10, type=int)
     # parser.add_argument("--top_k", default=1, type=int)
 
     # parser.add_argument("--lr", default=3e-4, type=float)
@@ -251,12 +233,7 @@ if __name__ == "__main__":
     args.top_k = hyperparameters[args.env_name]['top_k']
 
     # Setup Logging
-    file_name = f"{args.env_name}|{args.exp}|diffusion-{args.algo}|T-{args.T}"
-    if args.lr_decay: file_name += '|lr_decay'
-    file_name += f'|ms-{args.ms}'
-
-    if args.ms == 'offline': file_name += f'|k-{args.top_k}'
-    file_name += f'|{args.seed}'
+    file_name = f"{args.env_name}-seed{args.seed}"
 
     results_dir = os.path.join(args.output_dir, file_name)
     if not os.path.exists(results_dir):
@@ -282,7 +259,6 @@ if __name__ == "__main__":
     variant.update(max_action=max_action)
     setup_logger(os.path.basename(results_dir), variant=variant, log_dir=results_dir)
     utils.print_banner(f"Env: {args.env_name}, state_dim: {state_dim}, action_dim: {action_dim}")
-    wandb.init(project='DQL TEST')
 
     train_agent(env,
                 state_dim,
