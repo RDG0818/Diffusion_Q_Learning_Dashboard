@@ -1,3 +1,12 @@
+torch
 numpy
-gym
 scikit-learn
+gymnasium[mujoco]
+minari[all]
+minari[h5py]
+streamlit
+pandas
+plotly
+hydra-core
+shap
+umap-learn

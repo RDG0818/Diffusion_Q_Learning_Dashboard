@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import math
-import time
 import numpy as np
 import torch
 import torch.nn as nn
@@ -77,7 +76,7 @@ class WeightedLoss(nn.Module):
             pred, targ : tensor [ batch_size x action_dim ]
         '''
         loss = self._loss(pred, targ)
-        weighted_loss = (loss * weights)
+        weighted_loss = (loss * weights).mean()
         return weighted_loss
 
 class WeightedL1(WeightedLoss):

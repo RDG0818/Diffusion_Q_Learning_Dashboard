@@ -7,15 +7,9 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.optim.lr_scheduler import CosineAnnealingLR
-from utils.logger import logger
-from sklearn.cluster import KMeans, MiniBatchKMeans
-from sklearn.preprocessing import StandardScaler
-from sklearn.preprocessing import RobustScaler
-from sklearn.metrics import confusion_matrix
-import math
 
 from agents.diffusion import Diffusion
-from agents.model import MLP, SequenceModel
+from agents.model import MLP
 from agents.helpers import EMA
 
 
@@ -37,7 +31,7 @@ class Critic(nn.Module):
                                       nn.Linear(hidden_dim, hidden_dim),
                                       nn.Mish(),
                                       nn.Linear(hidden_dim, 1))
-
+    
     def forward(self, state, action):
         x = torch.cat([state, action], dim=-1)
         return self.q1_model(x), self.q2_model(x)
@@ -69,14 +63,13 @@ class Diffusion_QL(object):
                  lr=3e-4,
                  lr_decay=False,
                  lr_maxt=1000,
-                 grad_norm=1.0
+                 grad_norm=1.0,
                  ):
 
         self.model = MLP(state_dim=state_dim, action_dim=action_dim, device=device)
 
         self.actor = Diffusion(state_dim=state_dim, action_dim=action_dim, model=self.model, max_action=max_action,
                                beta_schedule=beta_schedule, n_timesteps=n_timesteps,).to(device)
-         
         self.actor_optimizer = torch.optim.Adam(self.actor.parameters(), lr=lr)
 
         self.lr_decay = lr_decay
@@ -110,14 +103,14 @@ class Diffusion_QL(object):
             return
         self.ema.update_model_average(self.ema_model, self.actor)
 
-    def train(self, replay_buffer, iterations, batch_size=32, sequence_length=16, log_writer=None):
-        
+    def train(self, replay_buffer, iterations, batch_size=512):
+
         metric = {'bc_loss': [], 'ql_loss': [], 'actor_loss': [], 'critic_loss': []}
         for _ in range(iterations):
+            # Sample replay buffer / batch
             state, action, next_state, reward, not_done = replay_buffer.sample(batch_size)
 
             """ Q Training """
-
             current_q1, current_q2 = self.critic(state, action)
 
             if self.max_q_backup:
@@ -143,21 +136,22 @@ class Diffusion_QL(object):
             self.critic_optimizer.step()
 
             """ Policy Training """
-            bc_loss = self.actor.loss(action, state).mean()
+            bc_loss = self.actor.loss(action, state)
             new_action = self.actor(state)
+
             q1_new_action, q2_new_action = self.critic(state, new_action)
             if np.random.uniform() > 0.5:
                 q_loss = - q1_new_action.mean() / q2_new_action.abs().mean().detach()
             else:
                 q_loss = - q2_new_action.mean() / q1_new_action.abs().mean().detach()
             actor_loss = bc_loss + self.eta * q_loss
-            if self.grad_norm > 0:
-                actor_grad_norms = nn.utils.clip_grad_norm_(self.actor.parameters(), max_norm=self.grad_norm, norm_type=2)
 
             self.actor_optimizer.zero_grad()
             actor_loss.backward()
+            if self.grad_norm > 0: 
+                actor_grad_norms = nn.utils.clip_grad_norm_(self.actor.parameters(), max_norm=self.grad_norm, norm_type=2)
             self.actor_optimizer.step()
-            
+
 
             """ Step Target network """
             if self.step % self.update_ema_every == 0:
@@ -168,16 +162,6 @@ class Diffusion_QL(object):
 
             self.step += 1
 
-            """ Log """
-            if log_writer is not None:
-                if self.grad_norm > 0:
-                    log_writer.add_scalar('Actor Grad Norm', actor_grad_norms.max().item(), self.step)
-                    log_writer.add_scalar('Critic Grad Norm', critic_grad_norms.max().item(), self.step)
-                log_writer.add_scalar('BC Loss', bc_loss.item(), self.step)
-                log_writer.add_scalar('QL Loss', q_loss.item(), self.step)
-                log_writer.add_scalar('Critic Loss', critic_loss.item(), self.step)
-                log_writer.add_scalar('Target_Q Mean', target_q.mean().item(), self.step)
-            
             metric['actor_loss'].append(actor_loss.item())
             metric['bc_loss'].append(bc_loss.item())
             metric['ql_loss'].append(q_loss.item())
@@ -197,7 +181,7 @@ class Diffusion_QL(object):
             q_value = self.critic_target.q_min(state_rpt, action).flatten()
             idx = torch.multinomial(F.softmax(q_value, dim=-1), 1)
         return action[idx].cpu().data.numpy().flatten()
-    
+
     def save_model(self, dir, id=None):
         if id is not None:
             torch.save(self.actor.state_dict(), f'{dir}/actor_{id}.pth')
@@ -214,89 +198,3 @@ class Diffusion_QL(object):
             self.actor.load_state_dict(torch.load(f'{dir}/actor.pth'))
             self.critic.load_state_dict(torch.load(f'{dir}/critic.pth'))
 
-
-def train(self, replay_buffer, iterations, batch_size=32, sequence_length=16, log_writer=None):
-        
-        metric = {'bc_loss': [], 'ql_loss': [], 'actor_loss': [], 'critic_loss': []}
-        for _ in range(iterations):
-            state, action, next_state, reward, not_done, source = replay_buffer.sample(batch_size)
-
-            """ Q Training """
-            current_q1, current_q2 = self.critic(state[:, 0], action[:, 0])
-
-            with torch.no_grad():
-                next_action = self.ema_model(next_state[:, -1])
-                target_q1, target_q2 = self.critic_target(next_state[:, -1], next_action)
-                bootstrap_q = torch.min(target_q1, target_q2)
-
-                target_q = torch.zeros_like(reward[:, 0])
-                cumulative_discount = 1.0
-
-                for i in range(sequence_length):
-                    target_q += cumulative_discount * reward[:, i]
-                    cumulative_discount *= self.discount * not_done[:, i]
-
-                target_q += (self.discount**sequence_length) * bootstrap_q
-
-            target_q = target_q.detach()
-
-            critic_loss = F.mse_loss(current_q1, target_q) + F.mse_loss(current_q2, target_q)
-
-            self.critic_optimizer.zero_grad()
-            critic_loss.backward()
-            if self.grad_norm > 0:
-                critic_grad_norms = nn.utils.clip_grad_norm_(self.critic.parameters(), max_norm=self.grad_norm, norm_type=2)
-            self.critic_optimizer.step()
-
-            """ Policy Training """
-
-
-            with torch.no_grad():
-                state_dim = state.shape[-1]
-                action_dim = action.shape[-1]
-
-                flat_state = state.reshape(batch_size * sequence_length, state_dim)
-                flat_action = action.reshape(batch_size * sequence_length, action_dim)
-
-                q1, q2 = self.critic(flat_state, flat_action)
-                q_vals = torch.min(q1, q2).reshape(batch_size, sequence_length)
-
-                advantage_weights = torch.exp(q_vals/self.eta).detach()
-                advantage_weights = torch.clamp(advantage_weights, max=100.0)
-
-            actor_loss = self.actor.loss(action, state, weights=advantage_weights)
-                
-            if self.grad_norm > 0:
-                actor_grad_norms = nn.utils.clip_grad_norm_(self.actor.parameters(), max_norm=self.grad_norm, norm_type=2)
-            
-            self.actor_optimizer.zero_grad()
-            actor_loss.backward()
-            self.actor_optimizer.step()
-            
-
-            """ Step Target network """
-            if self.step % self.update_ema_every == 0:
-                self.step_ema()
-
-            for param, target_param in zip(self.critic.parameters(), self.critic_target.parameters()):
-                target_param.data.copy_(self.tau * param.data + (1 - self.tau) * target_param.data)
-
-            self.step += 1
-
-            """ Log """
-            if log_writer is not None:
-                if self.grad_norm > 0:
-                    log_writer.add_scalar('Actor Grad Norm', actor_grad_norms.max().item(), self.step)
-                    log_writer.add_scalar('Critic Grad Norm', critic_grad_norms.max().item(), self.step)
-                log_writer.add_scalar('Actor Loss', actor_loss.item(), self.step)
-                log_writer.add_scalar('Critic Loss', critic_loss.item(), self.step)
-                log_writer.add_scalar('Target_Q Mean', target_q.mean().item(), self.step)
-            
-            metric['actor_loss'].append(actor_loss.item())
-            metric['critic_loss'].append(critic_loss.item())
-
-        if self.lr_decay: 
-            self.actor_lr_scheduler.step()
-            self.critic_lr_scheduler.step()
-
-        return metric

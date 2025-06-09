@@ -3,9 +3,6 @@
 
 import time
 import math
-import torch
-import numpy as np
-
 
 def print_banner(s, separator="-", num_star=60):
 	print(separator * num_star, flush=True)

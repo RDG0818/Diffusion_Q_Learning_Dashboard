@@ -1,7 +1,6 @@
 # Copyright 2022 Twitter, Inc and Zhendong Wang.
 # SPDX-License-Identifier: Apache-2.0
 
-import copy
 import numpy as np
 import torch
 import torch.nn as nn
@@ -176,7 +175,6 @@ class Diffusion(nn.Module):
     def loss(self, x, state, weights=1.0):
         batch_size = len(x)
         t = torch.randint(0, self.n_timesteps, (batch_size,), device=x.device).long()
-        
         return self.p_losses(x, state, t, weights)
 
     def forward(self, state, *args, **kwargs):
