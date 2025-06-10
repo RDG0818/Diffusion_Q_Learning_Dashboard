@@ -13,6 +13,7 @@ from agents.model import MLP
 from agents.helpers import EMA
 
 
+
 class Critic(nn.Module):
     def __init__(self, state_dim, action_dim, hidden_dim=256):
         super(Critic, self).__init__()
@@ -103,9 +104,9 @@ class Diffusion_QL(object):
             return
         self.ema.update_model_average(self.ema_model, self.actor)
 
-    def train(self, replay_buffer, iterations, batch_size=512):
+    def train(self, replay_buffer, iterations, batch_size=512, progress_bar=None):
 
-        metric = {'bc_loss': [], 'ql_loss': [], 'actor_loss': [], 'critic_loss': []}
+        metric = {'bc_loss': [], 'ql_loss': [], 'actor_loss': [], 'critic_loss': [], 'avg_q_batch': [], 'avg_q_policy': [], 'actor_gn': [], 'critic_gn': []}
         for _ in range(iterations):
             # Sample replay buffer / batch
             state, action, next_state, reward, not_done = replay_buffer.sample(batch_size)
@@ -166,6 +167,17 @@ class Diffusion_QL(object):
             metric['bc_loss'].append(bc_loss.item())
             metric['ql_loss'].append(q_loss.item())
             metric['critic_loss'].append(critic_loss.item())
+            metric['avg_q_batch'].append(torch.min(current_q1, current_q2).mean().item())
+            metric['avg_q_policy'].append(torch.min(q1_new_action, q2_new_action).mean().item())
+            metric['actor_gn'].append(actor_grad_norms.item())
+            metric['critic_gn'].append(critic_grad_norms.item())
+
+            if progress_bar is not None:
+                progress_bar.update(1) 
+                progress_bar.set_postfix(
+                    critic_loss=f"{metric['critic_loss'][-1]:.3f}",
+                    actor_loss=f"{metric['actor_loss'][-1]:.3f}"
+                )
 
         if self.lr_decay: 
             self.actor_lr_scheduler.step()
@@ -192,9 +204,21 @@ class Diffusion_QL(object):
 
     def load_model(self, dir, id=None):
         if id is not None:
-            self.actor.load_state_dict(torch.load(f'{dir}/actor_{id}.pth'))
-            self.critic.load_state_dict(torch.load(f'{dir}/critic_{id}.pth'))
+            actor_path = f'{dir}/actor_{id}.pth'
+            critic_path = f'{dir}/critic_{id}.pth'
         else:
-            self.actor.load_state_dict(torch.load(f'{dir}/actor.pth'))
-            self.critic.load_state_dict(torch.load(f'{dir}/critic.pth'))
+            actor_path = f'{dir}/actor.pth'
+            critic_path = f'{dir}/critic.pth'
+
+        actor_state_dict = torch.load(actor_path)
+        critic_state_dict = torch.load(critic_path)
+
+        def strip_prefix(state_dict):
+            return {k.replace("_orig_mod.", ""): v for k, v in state_dict.items()}
+
+        cleaned_actor_state_dict = strip_prefix(actor_state_dict)
+        cleaned_critic_state_dict = strip_prefix(critic_state_dict)
+
+        self.actor.load_state_dict(cleaned_actor_state_dict)
+        self.critic.load_state_dict(cleaned_critic_state_dict)
 

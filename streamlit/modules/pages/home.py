@@ -12,24 +12,24 @@ def create_returns_graph(df: pd.DataFrame, environment_name: str):
     """
     Creates a Plotly graph of returns for a SPECIFIC environment.
     """
-    df_env = df[df['environment'] == environment_name]
+    df_env = df[df['experiment_name'].str.contains(environment_name)]
     
     if df_env.empty:
         fig = go.Figure()
         fig.update_layout(title=f"No data found for {environment_name}", template="plotly_dark")
         return fig
         
-    stats_df = df_env.groupby('step')['norm_return'].agg(['mean', 'min', 'max']).reset_index()
+    stats_df = df_env.groupby('step')['return'].agg(['mean', 'min', 'max']).reset_index()
 
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=stats_df['step'], y=stats_df['max'], mode='lines', line=dict(width=0), showlegend=False))
     fig.add_trace(go.Scatter(x=stats_df['step'], y=stats_df['min'], mode='lines', line=dict(width=0),
         fillcolor='rgba(255, 153, 0, 0.2)', fill='tonexty', showlegend=False, name='Min/Max Range'))
-    fig.add_trace(go.Scatter(x=stats_df['step'], y=stats_df['mean'], mode='lines', name='Mean Return',
+    fig.add_trace(go.Scatter(x=stats_df['step'], y=stats_df['mean'], mode='lines', name='Mean Reward',
         line=dict(color='#FF9900', width=3),
-        hovertemplate='<b>Step</b>: %{x}<br><b>Mean Norm. Return</b>: %{y:.2f}<extra></extra>'))
+        hovertemplate='<b>Step</b>: %{x}<br><b>Mean Reward</b>: %{y:.2f}<extra></extra>'))
     
-    fig.update_layout(xaxis_title="Training Steps", yaxis_title="Normalized Return", template="plotly_dark",
+    fig.update_layout(xaxis_title="Training Steps", yaxis_title="Reward", template="plotly_dark",
         legend=dict(x=0.01, y=0.99), margin=dict(l=40, r=40, t=30, b=40))
     return fig
 
@@ -37,7 +37,7 @@ def create_loss_graph(df: pd.DataFrame, environment_name: str):
     """
     Creates a dual-axis Plotly graph of losses for a SPECIFIC environment.
     """
-    df_env = df[df['environment'] == environment_name]
+    df_env = df[df['experiment_name'].str.contains(environment_name)]
 
     if df_env.empty:
         return go.Figure()
@@ -81,7 +81,7 @@ def app(df):
 
         **Modernization:** Updating libraries for improved stability and compatibility.
 
-        **Performance:** Re-engineering the pipeline for faster, distributed training.
+        **Performance:** Re-engineering the pipeline for faster training.
         
         **Analysis:** Developing this dashboard for interactive visual insights.
         """
@@ -100,7 +100,7 @@ def app(df):
     st.markdown(f"<h1 style='text-align: center;'>Diffusion Q-Learning Dashboard</h1>", unsafe_allow_html=True)
     st.markdown("""
     <div style='text-align: center;'>
-    A visualization and analysis suite for exploring offline RL experiments with Diffusion Q-Learning, meant to examine training dynamics, sample efficiency, and model behavior.
+    A visualization and analysis suite for exploring offline RL experiments with Diffusion Q-Learning, meant to examine training dynamics, sample efficiency, and model behavior. Data for this page was collected from the original Diffusion Q-Learning repository. All other pages use my modifications, specifically the updated Minari datasets.
     </div>
     """, unsafe_allow_html=True)
     st.divider()
@@ -138,14 +138,11 @@ def app(df):
             """, unsafe_allow_html=True)
             st.markdown("")
 
-            # --- ROBUST CENTERING FIX ---
-            # Use columns to center the radio button widget
             _ , radio_col, _ = st.columns([1, 2, 1])
             with radio_col:
                 env_choice = st.radio("Select Environment:",
                     ["halfcheetah-medium-expert-v2", "walker2d-medium-expert-v2", "hopper-medium-expert-v2"], 
                     horizontal=True, label_visibility="collapsed")
-            # --- END OF FIX ---
             
             st.markdown(f"<h5 style='text-align: center;'>Average Training Losses: {env_choice}</h5>", unsafe_allow_html=True)
             

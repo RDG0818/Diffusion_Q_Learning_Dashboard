@@ -10,3 +10,5 @@ plotly
 hydra-core
 shap
 umap-learn
+ipython
+imageio[ffmpeg]
