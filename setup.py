@@ -1,7 +1,7 @@
 import minari
 import os
 
-BASE_ENVIRONMENTS = ['halfcheetah', 'hopper', 'walker2d']
+BASE_ENVIRONMENTS = ['halfcheetah', 'hopper', 'walker2d', 'ant', 'swimmer']
 SOURCE_QUALITIES = ['medium', 'expert']
 NAMESPACE = "mujoco"
 

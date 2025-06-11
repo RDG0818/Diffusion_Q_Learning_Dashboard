@@ -85,7 +85,7 @@ def app(df=None):
 
     st.divider()
     # Model & data
-    MODEL_DIR = st.sidebar.text_input("Model Directory", "results/walker2d-medium-expert-0-16-30-34")
+    MODEL_DIR = st.sidebar.text_input("Model Directory", "results/walker2d-medium-expert-0")
     PARAMS_PATH = f"{MODEL_DIR}/params.json"
     try:
         agent, device, observations = load_agent_and_data(MODEL_DIR, PARAMS_PATH)

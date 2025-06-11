@@ -132,7 +132,7 @@ def app(df=None):
         return
 
     env_name = params['gym_env_name']
-    max_steps = st.sidebar.slider("Max Steps", 100, 1500, 1000)
+    max_steps = st.sidebar.slider("Max Steps", 50, 500, 250)
 
     st.markdown(
         """
@@ -163,3 +163,12 @@ def app(df=None):
             save_video(frames, tmp_path)
         st.success(f"Episode complete! Total reward: {total_reward:.2f}")
         render_video(tmp_path)
+
+        with open(tmp_path, "rb") as f:
+            st.download_button(
+                label="Download",
+                data=f,
+                file_name="policy_rollout.mp4",
+                mime="video/mp4",
+                use_container_width=True
+            )

@@ -1,5 +1,5 @@
 defaults:
-  - env: walker2d
+  - env: hopper
   - quality: medium-expert
   - _self_
 
@@ -29,4 +29,4 @@ beta_schedule: 'vp'
 
 hydra:
   run:
-    dir: results/${env.name}-${quality.name}-${seed}-${now:%H-%M-%S}
+    dir: results/${env.name}-${quality.name}-${seed}
