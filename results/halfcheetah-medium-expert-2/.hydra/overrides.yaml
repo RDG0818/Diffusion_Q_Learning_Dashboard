@@ -1,0 +1,4 @@
+- env=halfcheetah
+- seed=2
+- exp=halfcheetah-medium-expert-2
+- quality=medium-expert

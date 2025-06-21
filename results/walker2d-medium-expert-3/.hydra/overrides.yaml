@@ -1,0 +1,4 @@
+- env=walker2d
+- seed=3
+- exp=walker2d-medium-expert-3
+- quality=medium-expert

@@ -17,7 +17,7 @@ A Streamlit-based dashboard for visualizing and interacting with a Diffusion-QL 
 
 3. **Updated Libraries**: Migrated to PyTorch ≥ 2.0 for faster inference and Minari for modern datasets
 
-4. **DAgger-based Policy Distillation**: Introduced a DAgger-driven `distill.py` workflow to train a lightweight MLP student policy that imitates the Diffusion-QL teacher
+4. **DAgger-based Policy Distillation**: Added `distill.py` to train a lightweight MLP student policy that imitates the Diffusion-QL teacher
 
 ## Setup
 
@@ -25,14 +25,14 @@ A Streamlit-based dashboard for visualizing and interacting with a Diffusion-QL 
 
 Note that you should have at least 5 gb of spare memory for the Minari datasets.
 
-    ```
-    git clone https://github.com/RDG0818/Diffusion_Q_Learning_Dashboard.git
-    cd Offline-RL-Trajectory-Diffusion-Policy
-    conda create -n diff_policy python=3.10
-    conda activate diff_policy
-    pip install -r requirements.txt
-    python setup.py
-    ```
+```bash
+git clone https://github.com/RDG0818/Diffusion_Q_Learning_Dashboard.git
+cd Offline-RL-Trajectory-Diffusion-Policy
+conda create -n diff_policy python=3.10
+conda activate diff_policy
+pip install -r requirements.txt
+python setup.py
+```
 
 
 ## Running
@@ -65,6 +65,8 @@ python -m streamlit run streamlit/app.py
 ![Alt text](dashboard_images/st3.png "Q-function Explorer")
 
 ![Alt text](dashboard_images/st4.png "Policy Visualizer")
+
+![Alt text](dashboard_images/st5.png "DAgger Comparison")
 
 ## Acknowledgements
 

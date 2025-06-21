@@ -1,0 +1,4 @@
+- env=hopper
+- seed=3
+- exp=hopper-medium-expert-3
+- quality=medium-expert

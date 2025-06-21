@@ -1,0 +1,4 @@
+- env=swimmer
+- seed=3
+- exp=swimmer-medium-expert-3
+- quality=medium-expert

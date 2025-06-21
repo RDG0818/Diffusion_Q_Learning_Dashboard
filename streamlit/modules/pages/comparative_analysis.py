@@ -5,7 +5,6 @@ import plotly.graph_objects as go
 from modules.data_loader import load_new_experiments, load_dagger_experiments
 from pathlib import Path
 import numpy as np
-import re
 
 NAME = "Comparative Analysis"
 ENVIRONMENTS = ["hopper", "walker2d", "swimmer", "halfcheetah", "ant"]
@@ -15,136 +14,123 @@ CSV_METRICS = [
     'avg_q_batch', 'avg_q_policy',
     'actor_grad_norm', 'critic_grad_norm'
 ]
-LABELS = {
-    'avg_reward': 'Avg Reward',
-    'std_reward': 'Reward Std',
-    'avg_ep_length': 'Episode Length',
-    'actor_loss': 'Actor Loss',
-    'critic_loss': 'Critic Loss',
-    'bc_loss': 'BC Loss',
-    'ql_loss': 'QL Loss',
-    'avg_q_batch': 'Avg Q (Batch)',
-    'avg_q_policy': 'Avg Q (Policy)',
-    'actor_grad_norm': 'Actor Grad Norm',
-    'critic_grad_norm': 'Critic Grad Norm'
-}
+LABELS = {m: m.replace('_', ' ').title() for m in CSV_METRICS}
 
-def smooth_and_aggregate(df, metric):
+# Aggregate and (optionally) smooth data
+
+def aggregate(df, metric, smooth=True):
     df = df.sort_values('step')
-    df[metric] = df.groupby('experiment')[metric].transform(lambda x: x.rolling(window=10, min_periods=1).mean())
+    if smooth:
+        df[metric] = df.groupby('experiment')[metric].transform(lambda x: x.rolling(window=10, min_periods=1).mean())
+    # base key without seed
     df['base'] = df['experiment'].apply(lambda x: '-'.join(x.split('-')[:-1]))
     agg = df.groupby(['base', 'step'])[metric].agg(['mean', 'min', 'max']).reset_index()
+    agg.columns = ['base', 'step', 'mean', 'min', 'max']
     return agg
 
-def plot_with_bounds(df, metric, label):
+# Plot with shaded bounds
+
+def plot_with_bounds(df, label):
     fig = go.Figure()
-    bases = df['base'].unique()
-    for b in bases:
-        sub = df[df['base'] == b]
-        fig.add_trace(go.Scatter(x=sub['step'], y=sub['mean'], mode='lines', name=b))
-        fig.add_trace(go.Scatter(x=sub['step'], y=sub['max'], mode='lines', name=f'{b} max', line=dict(width=0), showlegend=False))
-        fig.add_trace(go.Scatter(x=sub['step'], y=sub['min'], mode='lines', name=f'{b} min', fill='tonexty', line=dict(width=0), showlegend=False))
-    fig.update_layout(title=label, xaxis_title='Step', yaxis_title=label, template='plotly_dark')
+    for base in df['base'].unique():
+        sub = df[df['base'] == base]
+        fig.add_trace(go.Scatter(x=sub['step'], y=sub['mean'], mode='lines', name=f"{base}"))
+        fig.add_trace(go.Scatter(
+            x=sub['step'], y=sub['max'],
+            mode='lines', line=dict(width=0), hoverinfo='none', showlegend=False
+        ))
+        fig.add_trace(go.Scatter(
+            x=sub['step'], y=sub['min'],
+            mode='lines', fill='tonexty', line=dict(width=0), hoverinfo='none', showlegend=False
+        ))
+    fig.update_layout(
+        xaxis_title='Step', yaxis_title=label,
+        template='plotly_dark'
+    )
     return fig
 
+# Main app
 def app(df=None):
     st.markdown(f"<h1 style='text-align:center;'>{NAME}</h1>", unsafe_allow_html=True)
     st.markdown(
         """
         <div style='text-align:center; font-size:16px;'>
-        Compare baseline and DAgger-augmented runs on the same environment. Select an environment,
-        pick experiment folders, and visualize reward, losses, and other metrics.
-        </div>
+        Visualize averaged performance metrics (with min/max bounds) across multiple seeds for a chosen environment.
         """,
         unsafe_allow_html=True
     )
     st.divider()
 
-    # Sidebar selection
+    # Sidebar: config
     st.sidebar.header("Configuration")
     base_dir = st.sidebar.text_input("Results Directory", "results")
     env = st.sidebar.selectbox("Environment", ENVIRONMENTS)
 
+    # Discover all runs for env
     try:
-        runs = [d.name for d in Path(base_dir).iterdir() if d.is_dir() and env.lower() in d.name.lower()]
+        runs = sorted([d.name for d in Path(base_dir).iterdir() if d.is_dir() and d.name.startswith(f"{env}-")])
     except Exception:
         st.sidebar.error(f"Cannot access '{base_dir}'")
         return
-
-    selected = st.sidebar.multiselect("Select Runs", runs, default=runs[:2])
-    if not selected:
-        st.warning("Please select at least one run.")
+    if not runs:
+        st.error(f"No runs found for environment '{env}' in '{base_dir}'")
         return
 
-    # Load data
+    # Load and filter data
     data_new = load_new_experiments(base_dir)
     data_dagger = load_dagger_experiments(base_dir)
-
-    data_frames = []
-    if data_new is not None and not data_new.empty:
-        data_new = data_new.rename(columns={'experiment_name': 'experiment'})
-        data_new['type'] = 'baseline'
-        data_new = data_new[data_new['experiment'].isin(selected)]
-        data_frames.append(data_new)
-    if data_dagger is not None and not data_dagger.empty:
-        data_dagger = data_dagger.rename(columns={'experiment_name': 'experiment'})
-        data_dagger['type'] = 'dagger'
-        data_dagger = data_dagger[data_dagger['experiment'].isin(selected)]
-        data_frames.append(data_dagger)
-
-    if not data_frames:
-        st.error("No matching data found.")
+    dfs = []
+    if data_new is not None:
+        df = data_new.rename(columns={'experiment_name':'experiment'})
+        df = df[df['experiment'].isin(runs)]
+        dfs.append(df)
+    if data_dagger is not None:
+        df2 = data_dagger.rename(columns={'experiment_name':'experiment'})
+        df2 = df2[df2['experiment'].isin(runs)]
+        dfs.append(df2)
+    if not dfs:
+        st.error("No data loaded.")
         return
+    data = pd.concat(dfs, ignore_index=True)
 
-    data = pd.concat(data_frames, ignore_index=True)
+    # Layout: two columns, then dagger, then extras
+    col1, col2 = st.columns(2)
 
-    col1, col2 = st.columns([1, 1])
-
+    # Left: avg_reward, actor_loss
     with col1:
         for metric in ['avg_reward', 'actor_loss']:
-            st.markdown(f"### {LABELS.get(metric, metric)}")
-            agg = smooth_and_aggregate(data.copy(), metric)
-            fig = plot_with_bounds(agg, metric, LABELS.get(metric, metric))
+            agg = aggregate(data.copy(), metric)
+            fig = plot_with_bounds(agg, LABELS[metric])
             st.plotly_chart(fig, use_container_width=True)
 
+    # Right: avg_ep_length, critic_loss
     with col2:
         for metric in ['avg_ep_length', 'critic_loss']:
-            st.markdown(f"### {LABELS.get(metric, metric)}")
-            agg = smooth_and_aggregate(data.copy(), metric)
-            fig = plot_with_bounds(agg, metric, LABELS.get(metric, metric))
+            agg = aggregate(data.copy(), metric)
+            fig = plot_with_bounds(agg, LABELS[metric])
             st.plotly_chart(fig, use_container_width=True)
 
-    # DAgger Comparison
+    # DAgger comparison
     st.markdown("### DAgger Model Comparison")
     dagger_files = list(Path(base_dir).glob("**/*student_policy_dagger_eval*.csvh"))
     if dagger_files:
         file = st.selectbox("Select DAgger CSV", dagger_files)
-        df_dagger = pd.read_csv(file)
-
-        df_dagger['model'] = df_dagger['model'].replace({'student': 'Distilled MLP', 'teacher': 'Diffusion QL'})
-        col = st.selectbox("Compare by", ['reward', 'length', 'time'])
-        teacher_avg = df_dagger[df_dagger['model'] == 'Diffusion QL'][col].mean()
-
+        df_d = pd.read_csv(file)
+        df_d['model'] = df_d['model'].replace({'student':'Distilled MLP','teacher':'Diffusion QL'})
+        col = st.selectbox("Compare by", ['reward','length','time'])
+        teacher_avg = df_d[df_d['model']=='Diffusion QL'][col].mean()
         fig = px.box(
-            df_dagger[df_dagger['model'] == 'Distilled MLP'],
-            x='model', y=col, color='model', points='all', template='plotly_dark',
-            title=f"Distilled MLP vs Diffusion QL: {col.capitalize()}"
+            df_d[df_d['model']=='Distilled MLP'], x='model', y=col, color='model', points='all', template='plotly_dark'
         )
         fig.add_hline(y=teacher_avg, line_dash='dot', line_color='red', line_width=3,
                       annotation_text='Diffusion QL Avg', annotation_position='top left')
         st.plotly_chart(fig, use_container_width=True)
-    else:
-        st.info("No DAgger evaluation CSVs found.")
 
-    # Extra metrics
+    # Additional metrics
     st.markdown("### Additional Metric Comparison")
-    extra_metrics = st.multiselect(
-        "Select Extra Metrics",
-        [m for m in CSV_METRICS if m not in ['avg_reward', 'actor_loss', 'avg_ep_length', 'critic_loss']]
-    )
+    extra = st.multiselect("Select Extra Metrics", [m for m in CSV_METRICS if m not in ['avg_reward','actor_loss','avg_ep_length','critic_loss']])
     smooth = st.checkbox("Apply Smoothing", value=True)
-
-    for metric in extra_metrics:
-        agg = smooth_and_aggregate(data.copy(), metric) if smooth else None
-        fig = plot_with_bounds(agg, metric, LABELS.get(metric, metric))
+    for metric in extra:
+        agg = aggregate(data.copy(), metric, smooth=smooth)
+        fig = plot_with_bounds(agg, LABELS[metric])
         st.plotly_chart(fig, use_container_width=True)
