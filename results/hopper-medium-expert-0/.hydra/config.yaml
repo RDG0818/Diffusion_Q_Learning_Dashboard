@@ -1,13 +1,12 @@
-defaults:
-  - env: hopper
-  - quality: medium-expert
-  - _self_
-
-
+env:
+  name: hopper
+  action_space: 3
+  observation_space: 11
+quality:
+  name: medium-expert
+  gn: 5.0
 seed: 0
-device_id: 0 
-
-# Training Loop Parameters
+device_id: 0
 num_epochs: 200
 num_steps_per_epoch: 1000
 batch_size: 1024
@@ -15,32 +14,17 @@ eval_freq: 2
 eval_episodes: 10
 save_best_model: true
 reward_tune: 'no'
-
 agent:
-  # RL params
   discount: 0.99
   tau: 0.005
   eta: 1.0
-
-  # Optimizer/scheduler params
-  lr: 3e-4
+  lr: 0.0003
   lr_decay: false
   lr_maxt: ${num_epochs}
   grad_norm: 5.0
-
-  # Diffusion params
-  beta_schedule: 'vp'
+  beta_schedule: vp
   n_timesteps: 5
-
-  # Critic params
   max_q_backup: false
-
-  # EMA params
   ema_decay: 0.995
   step_start_ema: 1000
   update_ema_every: 5
-
-
-hydra:
-  run:
-    dir: results/${env.name}-${quality.name}-${seed}

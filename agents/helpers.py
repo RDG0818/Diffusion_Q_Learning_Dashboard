@@ -2,17 +2,25 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import math
+from typing import Dict, Type, Tuple, Union, Optional
+
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+""" Time/Positional Embedding """
+
 class SinusoidalPosEmb(nn.Module):
-    def __init__(self, dim):
+    """
+    A module for creating sinusoidal positional embeddings, used for
+    encoding timesteps in the diffusion model.
+    """
+    def __init__(self, dim: int) -> None:
         super().__init__()
         self.dim = dim
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         device = x.device
         half_dim = self.dim // 2
         emb = math.log(10000) / (half_dim - 1)
@@ -21,21 +29,22 @@ class SinusoidalPosEmb(nn.Module):
         emb = torch.cat((emb.sin(), emb.cos()), dim=-1)
         return emb
 
-#-----------------------------------------------------------------------------#
-#---------------------------------- sampling ---------------------------------#
-#-----------------------------------------------------------------------------#
+""" Scheduling """
 
-
-def extract(a, t, x_shape):
+def extract(a: torch.Tensor, t: torch.Tensor, x_shape: torch.Size) -> torch.Tensor:
+    """
+    Extracts values from tensor 'a' at the indices specified by 't' and
+    reshapes them to be broadcastable with a tensor of shape 'x_shape'.
+    """
     b, *_ = t.shape
     out = a.gather(-1, t)
     return out.reshape(b, *((1,) * (len(x_shape) - 1)))
 
 
-def cosine_beta_schedule(timesteps, s=0.008, dtype=torch.float32):
+def cosine_beta_schedule(timesteps: int, s: float = 0.008, dtype: torch.dtype = torch.float32) -> torch.Tensor:
     """
-    cosine schedule
-    as proposed in https://openreview.net/forum?id=-NEXDKk8gZ
+    Generates a cosine tau schedule for the diffusion process, as proposed in:
+    https://openreview.net/forum?id=-NEXDKk8gZ
     """
     steps = timesteps + 1
     x = np.linspace(0, steps, steps)
@@ -46,70 +55,64 @@ def cosine_beta_schedule(timesteps, s=0.008, dtype=torch.float32):
     return torch.tensor(betas_clipped, dtype=dtype)
 
 
-def linear_beta_schedule(timesteps, beta_start=1e-4, beta_end=2e-2, dtype=torch.float32):
-    betas = np.linspace(
-        beta_start, beta_end, timesteps
-    )
+def linear_beta_schedule(timesteps: int, beta_start: float = 1e-4, beta_end: float = 2e-2, dtype: torch.dtype = torch.float32) -> torch.Tensor:
+    """
+    Generates a linear tau schedule for the diffusion process.
+    """
+    betas = np.linspace(beta_start, beta_end, timesteps)
     return torch.tensor(betas, dtype=dtype)
 
 
 def vp_beta_schedule(timesteps, dtype=torch.float32):
+    """    
+    Generates a variance-preserving (VP) tau schedule, as described in
+    "Score-Based Generative Modeling through Stochastic Differential Equations".
+    """
     t = np.arange(1, timesteps + 1)
     T = timesteps
-    b_max = 10.
+    b_max = 10.0
     b_min = 0.1
-    alpha = np.exp(-b_min / T - 0.5 * (b_max - b_min) * (2 * t - 1) / T ** 2)
+    alpha = np.exp(-b_min / T - 0.5 * (b_max - b_min) * (2 * t - 1) / T**2)
     betas = 1 - alpha
     return torch.tensor(betas, dtype=dtype)
 
-#-----------------------------------------------------------------------------#
-#---------------------------------- losses -----------------------------------#
-#-----------------------------------------------------------------------------#
 
-class WeightedLoss(nn.Module):
+class EMA:
+    """
+    A helper class for maintaining an Exponential Moving Average of a model's weights.
+    """
 
-    def __init__(self):
+    def __init__(self, tau: float) -> None:
         super().__init__()
+        self.tau = tau
 
-    def forward(self, pred, targ, weights=1.0):
-        '''
-            pred, targ : tensor [ batch_size x action_dim ]
-        '''
-        loss = self._loss(pred, targ)
-        weighted_loss = (loss * weights).mean()
-        return weighted_loss
+    def update_model_average(self,ma_model: nn.Module, current_model: nn.Module) -> None:
+        """
+        Updates the weights of the moving average model (ma_model) using the
+        weights from the current model.
 
-class WeightedL1(WeightedLoss):
-
-    def _loss(self, pred, targ):
-        return torch.abs(pred - targ)
-
-class WeightedL2(WeightedLoss):
-
-    def _loss(self, pred, targ):
-        return F.mse_loss(pred, targ, reduction='none')
-
-
-Losses = {
-    'l1': WeightedL1,
-    'l2': WeightedL2,
-}
-
-
-class EMA():
-    '''
-        empirical moving average
-    '''
-    def __init__(self, beta):
-        super().__init__()
-        self.beta = beta
-
-    def update_model_average(self, ma_model, current_model):
-        for current_params, ma_params in zip(current_model.parameters(), ma_model.parameters()):
+        Args:
+            ma_model (nn.Module): The target model to be updated (e.g., actor_target).
+            current_model (nn.Module): The source model with the latest weights.
+        """
+        for current_params, ma_params in zip(
+            current_model.parameters(), ma_model.parameters()
+        ):
             old_weight, up_weight = ma_params.data, current_params.data
             ma_params.data = self.update_average(old_weight, up_weight)
 
-    def update_average(self, old, new):
+    def update_average(self, old: Optional[torch.Tensor], new: torch.Tensor) -> torch.Tensor:
+        """
+        Calculates the new moving average value for a single parameter tensor.
+
+        Args:
+            old (Optional[torch.Tensor]): The old moving average weight.
+            new (torch.Tensor): The new weight from the online network.
+
+        Returns:
+            torch.Tensor: The updated moving average weight.
+        """
         if old is None:
             return new
-        return old * self.beta + (1 - self.beta) * new
+        return old * self.tau + (1 - self.tau) * new
+
