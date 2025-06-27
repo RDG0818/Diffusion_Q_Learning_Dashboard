@@ -1,8 +1,10 @@
 # Copyright 2022 Twitter, Inc and Zhendong Wang.
 # SPDX-License-Identifier: Apache-2.0
+#
+# Heavily refactored for clarity, type hinting, and documentation.
 
 import math
-from typing import Dict, Type, Tuple, Union, Optional
+from typing import Optional
 
 import numpy as np
 import torch

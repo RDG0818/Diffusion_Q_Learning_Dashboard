@@ -1,0 +1,9 @@
+cff-version: 1.2.0
+message: "If you use this software in your work, please cite it as below."
+authors:
+  - family-names: "Goodwin"
+    given-names: "Ryan"
+title: "A Refactored Implementation of Diffusion Policies for Offline RL"
+version: 1.0.0
+date-released: 2025-06-26
+repository-code: "https://github.com/RDG0818/Updated_Diffusion_Q_Learning"

@@ -1,5 +1,7 @@
 # Copyright 2022 Twitter, Inc and Zhendong Wang.
 # SPDX-License-Identifier: Apache-2.0
+#
+# Heavily refactored for clarity, type hinting, and documentation.
 
 import torch
 import torch.nn as nn
@@ -135,17 +137,6 @@ class Critic(nn.Module):
         state: torch.Tensor,
         action: torch.Tensor
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        """
-        Performs the forward pass for both Q-networks.
-
-        Args:
-            state (torch.Tensor): The batch of states.
-            action (torch.Tensor): The batch of actions.
-
-        Returns:
-            Tuple[torch.Tensor, torch.Tensor]: A tuple containing the Q-value
-            estimates from the first and second Q-networks, respectively.
-        """
         x = torch.cat([state, action], dim=-1)
         return self.q1_model(x), self.q2_model(x)
 

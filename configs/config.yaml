@@ -1,17 +1,15 @@
 defaults:
-  - env: hopper
-  - quality: medium-expert
+  - env: hopper_medium_expert # Look in env for different environment choices
   - _self_
-
 
 seed: 0
 device_id: 0 
 
 # Training Loop Parameters
-num_epochs: 200
+num_epochs: 2000
 num_steps_per_epoch: 1000
 batch_size: 1024
-eval_freq: 2
+eval_freq: 50
 eval_episodes: 10
 save_best_model: true
 reward_tune: 'no'
@@ -43,4 +41,4 @@ agent:
 
 hydra:
   run:
-    dir: results/${env.name}-${quality.name}-${seed}
+    dir: results/${env.filename}-${seed}

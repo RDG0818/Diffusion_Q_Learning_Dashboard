@@ -1,5 +1,7 @@
 # Copyright 2022 Twitter, Inc and Zhendong Wang.
 # SPDX-License-Identifier: Apache-2.0
+#
+# Heavily refactored for clarity, type hinting, and documentation.
 
 import copy
 import numpy as np
@@ -14,7 +16,7 @@ from tqdm.auto import tqdm
 from agents.diffusion import Diffusion
 from agents.model import MLP, Critic
 from agents.helpers import EMA
-from utils.data_sampler import Data_Sampler
+from data_sampler import Data_Sampler
 import os
 
 @dataclass
