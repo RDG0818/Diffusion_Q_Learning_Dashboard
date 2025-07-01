@@ -65,7 +65,8 @@ To change the environment or modify the hyperparameters, look at config/config.y
 
 Below are the live training curves from our benchmark runs, tracked with Weights & Biases. You can hover over the charts to see detailed results and use the legend to toggle different runs.
 
-<iframe src="https://wandb.ai/rdg291-mississippi-state-university/Diffusion_QL/reports/Diffusion-Q-Learning--VmlldzoxMzM5NDk3OQ" style="border:none;height:1024px;width:100%">
+
+<iframe src="https://wandb.ai/rdg291-mississippi-state-university/Diffusion_QL/reports/Diffusion-Q-Learning--VmlldzoxMzM5NDk3OQ" style="border:none;height:1024px;width:100%"></iframe>
 
 
 ## Citation
