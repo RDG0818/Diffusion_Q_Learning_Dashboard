@@ -65,7 +65,7 @@ To change the environment or modify the hyperparameters, look at config/config.y
 
 Below are the training curves from W&B.
 
-![alt text](https://github.com/RDG0818/Updated_Diffusion_Q_Learning/images/wandb_image.png "Diffusion Q Learning")
+[![W&B Results](images/wandb_image.png)](https://wandb.ai/rdg291-mississippi-state-university/Diffusion_QL/reports/Diffusion-Q-Learning--VmlldzoxMzM5NDk3OQ)
 
 
 ## Citation
