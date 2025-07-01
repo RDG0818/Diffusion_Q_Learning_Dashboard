@@ -1,5 +1,5 @@
 defaults:
-  - env: hopper_medium_expert # Look in env for different environment choices
+  - env: walker2d_medium_expert # Look in env for different environment choices
   - _self_
 
 seed: 0
@@ -22,6 +22,8 @@ agent:
 
   # Optimizer/scheduler params
   lr: 3e-4
+  critic_lr: 3e-4
+  critic_weight_decay: 1e-4
   lr_decay: false
   lr_maxt: ${num_epochs}
   grad_norm: 5.0

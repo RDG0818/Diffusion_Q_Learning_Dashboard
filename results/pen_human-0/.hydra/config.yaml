@@ -1,0 +1,30 @@
+env:
+  name: D4RL/pen/human-v2
+  filename: pen_human
+  action_space: 24
+  observation_space: 45
+seed: 0
+device_id: 0
+num_epochs: 2000
+num_steps_per_epoch: 1000
+batch_size: 1024
+eval_freq: 50
+eval_episodes: 50
+save_best_model: true
+reward_tune: normalize
+agent:
+  discount: 0.99
+  tau: 0.005
+  eta: 0.15
+  lr: 3.0e-05
+  critic_lr: 0.0001
+  critic_weight_decay: 0.0005
+  lr_decay: false
+  lr_maxt: ${num_epochs}
+  grad_norm: 1.0
+  beta_schedule: vp
+  n_timesteps: 5
+  max_q_backup: false
+  ema_decay: 0.995
+  step_start_ema: 1000
+  update_ema_every: 5

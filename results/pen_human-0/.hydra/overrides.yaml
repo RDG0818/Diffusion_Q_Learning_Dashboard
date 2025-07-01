@@ -1,0 +1,6 @@
+- env=pen_human
+- agent.lr=0.00003
+- agent.eta=0.15
+- reward_tune=normalize
+- agent.grad_norm=1.0
+- eval_episodes=50

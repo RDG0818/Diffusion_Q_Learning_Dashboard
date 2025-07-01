@@ -1,73 +1,92 @@
-# Diffusion Q-Learning Dashboard
-A Streamlit-based dashboard for visualizing and interacting with a Diffusion-QL policy, built on top of the [Diffusion Policies for Offline RL](https://github.com/Zhendong-Wang/Diffusion-Policies-for-Offline-RL) codebase. This repo contains:
-
-- Upgraded dependencies to modern PyTorch and related libraries
-- Hydra configuration replacing the original logging system
-- Streamlit dashboard with multiple pages for comprehensive model inspection
+# Updated Diffusion Q Learning
+This repository provides a modern implementation of the paper [Diffusion Policies as an Expressive Policy Class for Offline Reinforcement Learning](https://arxiv.org/pdf/2208.06193). The goal of this project is to provide an easy-to-use and extensible benchmark for further research in offline reinforcment learning with diffusion models.
 
 ## Core Changes
 
-1. **Config and Logging**: Switched to Hydra for flexible experiment configuration and logging
+- Natively handles `hopper`, `walker2d`, `halfcheetah`, `antmaze`, `kitchen`, and `pen` environments from the **Minari** benchmarks.
 
-2. **Streamlit Dashboard**
-    - Home Page: Overview of Diffusion-QL and reproduction of results
-    - Comparative Analysis: Line plots of reward & Q-learning loss over time
-    - Policy Visualizer: In-browser video of the agent’s rollout and total reward
-    - Q-Function Explorer: 2D heatmaps of Q(s, a) across action-dimension pairs and violin plots of Q-value distributions
+- All hyperparameters and settings are manage with **Hydra**, allowing for swappable configurations via the command line or config.yaml.
 
-3. **Updated Libraries**: Migrated to PyTorch ≥ 2.0 for faster inference and Minari for modern datasets
+- All logging is done through **Weights & Biases** for automatic visualization, analysis, and hyperparameter tuning.
 
-4. **DAgger-based Policy Distillation**: Added `distill.py` to train a lightweight MLP student policy that imitates the Diffusion-QL teacher
+- Codebase is fully type-hinted and documented, and it also includes a `evaluation.py` script for performance tests on model checkpoints.
 
-## Setup
+## Installation
 
-**Clone repository and install dependencies:**
-
-Note that you should have at least 5 gb of spare memory for the Minari datasets.
+### Clone the Repository:
 
 ```bash
-git clone https://github.com/RDG0818/Diffusion_Q_Learning_Dashboard.git
-cd Offline-RL-Trajectory-Diffusion-Policy
+git clone https://github.com/RDG0818/Updated_Diffusion_Q_Learning.git
+cd Updated_Diffusion_Q_Learning
+```
+
+### Create Conda Environment and Install Dependencies:
+```bash
 conda create -n diff_policy python=3.10
 conda activate diff_policy
 pip install -r requirements.txt
-python setup.py
+pip install -e .
 ```
 
+### Download Datasets:
+Run the setup script to download the necessary Minari datasets. Note that this may take some time and requires at least 5-10 GB of free disk space.
+```bash
+python dataset_download.py
+```
 
-## Running
+## Usage
 
-For default run:
+### Training a Model
+
+To start a training run, execute `main.py`. You can override any configuration setting from the command line. 
 
 ```bash
 python main.py
 ```
+**Train on different environment:**
 
-To modify configs, look at config/config.yaml. To modify specific environments, look under config/env or config/quality.
+```bash 
+python main.py env=walker2d_medium_expert
 
-After creating a results directory from running main.py, you can generate a distilled MLP by setting the results folder in config/distill.yaml and running:
-
+python main.py env=pen_human agent.lr=0.00003 agent.eta=0.15 reward_tune="normalize" agent.grad_norm=1.0 eval_episodes=50
 ```
-python distill.py
+
+### Evaluating a Trained Model
+
+Use the `evaluation.py` script to load a savedcheckpoint from a completed run and evaluate its performance.
+
+```bash
+python evaluation.py --run_dir results/hopper_medium_expert-0
 ```
 
-To run dashboard locally:
-
-``` bash
-python -m streamlit run streamlit/app.py
-```
+To change the environment or modify the hyperparameters, look at config/config.yaml.
 
 ## Results
-![Alt text](dashboard_images/st1.png "Home Page")
 
-![Alt text](dashboard_images/st2.png "Home Page")
+Below are the live training curves from our benchmark runs, tracked with Weights & Biases. You can hover over the charts to see detailed results and use the legend to toggle different runs.
 
-![Alt text](dashboard_images/st3.png "Q-function Explorer")
+<iframe src="https://api.wandb.ai/links/rdg291-mississippi-state-university/dhmww7rn" style="border:none; width:100%; height:520px;"></iframe>
 
-![Alt text](dashboard_images/st4.png "Policy Visualizer")
 
-![Alt text](dashboard_images/st5.png "DAgger Comparison")
+## Citation
+
+If you use this code in your research, please consider citing it:
+
+```bibtex
+@software{Goodwin_2025_DiffusionQL,
+  author = {[Ryan] [Goodwin]},
+  title = {{A Refactored Implementation of Diffusion Policies for Offline RL}},
+  month = {6},
+  year = {2025},
+  url = {https://github.com/RDG0818/Updated_Diffusion_Q_Learning}
+}
+```
+
 
 ## Acknowledgements
 
-This project builds upon the foundational concepts and codebase from the paper [Diffusion Policies as an Expressive Policy Class For Offline Reinforcement Learning](https://github.com/Zhendong-Wang/Diffusion-Policies-for-Offline-RL).
+This project is a refactoring and extension of the original work by Zhendong Wang, et al. from the following paper and codebase: [Diffusion Policies as an Expressive Policy Class For Offline Reinforcement Learning](https://github.com/Zhendong-Wang/Diffusion-Policies-for-Offline-RL).
+
+## License
+
+This project is licensed under the **Apache 2.0 License**.

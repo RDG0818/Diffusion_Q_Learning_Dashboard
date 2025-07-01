@@ -26,6 +26,8 @@ class AgentConfig:
     tau: float
     eta: float 
     lr: float 
+    critic_lr: float
+    critic_weight_decay: float
     lr_decay: bool
     lr_maxt: int
     grad_norm: float
@@ -66,7 +68,7 @@ class Diffusion_QL(object):
 
         self.critic = Critic(state_dim, action_dim).to(device)
         self.critic_target = copy.deepcopy(self.critic)
-        self.critic_optimizer = torch.optim.Adam(self.critic.parameters(), lr=cfg.lr)
+        self.critic_optimizer = torch.optim.Adam(self.critic.parameters(), lr=cfg.critic_lr, weight_decay=cfg.critic_weight_decay)
 
         self.ema = EMA(cfg.ema_decay)
         self.ema_model = copy.deepcopy(self.actor)
